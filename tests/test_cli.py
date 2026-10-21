@@ -4,6 +4,11 @@ from unittest.mock import patch
 import pytest
 
 from netdoctor.cli import main
+from netdoctor.crosscheck import (
+    CrosscheckReport,
+    TcpAttempt,
+    _summarize_tcp,
+)
 from netdoctor.icmp import EchoResult, ProbeError
 from netdoctor.latency import LatencyReport, _summarize
 from netdoctor.models import Adapter, Snapshot
@@ -79,8 +84,8 @@ def test_json_reports_incomplete_routes_instead_of_false_missing_route(capsys):
     assert report["snapshot"]["routes_complete"] is False
 
     assert not any(
-        f["title"] == "No usable default route was found"
-        for f in report["findings"]
+        finding["title"] == "No usable default route was found"
+        for finding in report["findings"]
     )
 
 
@@ -128,7 +133,6 @@ def test_latency_json_report_integrates(capsys):
         assert main(["latency", "--json"]) == 0
 
     payload = json.loads(capsys.readouterr().out)
-
     assert payload["targets"][0]["median_ms"] == 25.5
 
 
@@ -146,7 +150,6 @@ def test_latency_native_error_is_readable(capsys):
         assert main(["latency", "--json"]) == 2
 
     payload = json.loads(capsys.readouterr().out)
-
     assert payload["error"]["code"] == "ND-201"
 
 
@@ -162,3 +165,123 @@ def test_scan_refuses_latency_flags():
         main(["scan", "--count", "10"])
 
     assert result.value.code == 2
+
+
+def test_investigate_json_uses_crosscheck_engine(capsys):
+    icmp = _summarize(
+        "Target",
+        "1.1.1.1",
+        "public",
+        (
+            EchoResult("reply", 25.0, "OK"),
+            EchoResult("reply", 26.0, "OK"),
+        ),
+    )
+
+    tcp = _summarize_tcp(
+        "Target",
+        "1.1.1.1",
+        (
+            TcpAttempt("connected", 35.0, "connected"),
+            TcpAttempt("connected", 37.0, "connected"),
+        ),
+    )
+
+    response = CrosscheckReport(
+        LatencyReport((icmp,), ()),
+        (tcp,),
+        (),
+    )
+
+    with (
+        patch(
+            "netdoctor.cli.collect_snapshot",
+            return_value=_snapshot(),
+        ),
+        patch(
+            "netdoctor.cli.run_crosscheck",
+            return_value=response,
+        ) as call,
+    ):
+        assert main([
+            "investigate",
+            "--count",
+            "2",
+            "--json",
+        ]) == 0
+
+    result = json.loads(capsys.readouterr().out)
+
+    assert result["tcp"][0]["median_ms"] == 36
+    assert result["latency"]["targets"][0]["median_ms"] == 25.5
+    assert call.call_args.kwargs["count"] == 2
+
+
+def test_investigate_text_output_explains_protocols(capsys):
+    icmp = _summarize(
+        "Target",
+        "1.1.1.1",
+        "public",
+        (
+            EchoResult("reply", 25.0, "OK"),
+            EchoResult("reply", 26.0, "OK"),
+        ),
+    )
+
+    tcp = _summarize_tcp(
+        "Target",
+        "1.1.1.1",
+        (
+            TcpAttempt("connected", 35.0, "connected"),
+        ),
+    )
+
+    response = CrosscheckReport(
+        LatencyReport((icmp,), ()),
+        (tcp,),
+        (),
+    )
+
+    with (
+        patch(
+            "netdoctor.cli.collect_snapshot",
+            return_value=_snapshot(),
+        ),
+        patch(
+            "netdoctor.cli.run_crosscheck",
+            return_value=response,
+        ),
+    ):
+        assert main(["investigate"]) == 0
+
+    output = capsys.readouterr().out
+
+    assert "TCP connects" in output
+    assert "ICMP replies" in output
+    assert "not TLS, HTTP, or speed" in output
+
+
+def test_investigate_does_not_accept_offline():
+    with pytest.raises(SystemExit) as exc:
+        main(["investigate", "--offline"])
+
+    assert exc.value.code == 2
+
+
+def test_investigate_native_error_is_structured(capsys):
+    with (
+        patch(
+            "netdoctor.cli.collect_snapshot",
+            return_value=_snapshot(),
+        ),
+        patch(
+            "netdoctor.cli.run_crosscheck",
+            side_effect=ProbeError("ICMP unavailable"),
+        ),
+    ):
+        assert main(["investigate", "--json"]) == 2
+
+    assert (
+        json.loads(capsys.readouterr().out)["error"]["code"]
+        == "ND-201"
+    )

@@ -1,4 +1,4 @@
-"""Console entry point. UI and diagnostics do not depend on one another."""
+"""NetDoctor's human-readable and JSON command-line interface."""
 
 import argparse
 import json
@@ -12,6 +12,7 @@ from rich.table import Table
 
 from netdoctor import __version__
 from netdoctor.checks import TEST_HOSTS, check_endpoint, diagnose
+from netdoctor.crosscheck import CrosscheckReport, run_crosscheck
 from netdoctor.icmp import ProbeError
 from netdoctor.latency import LatencyError, LatencyReport, measure_latency
 from netdoctor.models import Report
@@ -29,9 +30,9 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "command",
         nargs="?",
-        choices=["scan", "latency"],
+        choices=["scan", "latency", "investigate"],
         default="scan",
-        help="scan (default) or latency (IPv4 ICMP responsiveness)",
+        help="scan (default), latency, or investigate (ICMP and TCP)",
     )
 
     parser.add_argument(
@@ -44,7 +45,7 @@ def _parser() -> argparse.ArgumentParser:
         "--json",
         action="store_true",
         dest="as_json",
-        help="Output the complete report as JSON",
+        help="Output JSON",
     )
 
     parser.add_argument(
@@ -66,7 +67,7 @@ def _parser() -> argparse.ArgumentParser:
         type=int,
         default=None,
         metavar="N",
-        help="Echo attempts per destination for latency (2–12, default: 6)",
+        help="Attempts per destination for latency/investigate (2–12, default: 6)",
     )
 
     parser.add_argument(
@@ -74,7 +75,7 @@ def _parser() -> argparse.ArgumentParser:
         type=float,
         default=None,
         metavar="SECONDS",
-        help="Pause between echoes for latency (0–2, default: 0.25)",
+        help="Pause between probes for latency/investigate (0–2, default: 0.25)",
     )
 
     parser.add_argument(
@@ -82,7 +83,7 @@ def _parser() -> argparse.ArgumentParser:
         action="append",
         default=[],
         metavar="HOST",
-        help="IPv4 address or hostname to test (up to three; replaces public defaults)",
+        help="IPv4 address or hostname (up to three; replaces public defaults)",
     )
 
     parser.add_argument(
@@ -92,6 +93,26 @@ def _parser() -> argparse.ArgumentParser:
     )
 
     return parser
+
+
+def _print_findings(findings, console: Console) -> None:
+    colors = {
+        "good": "green",
+        "warning": "yellow",
+        "critical": "red",
+        "info": "cyan",
+    }
+
+    for finding in findings:
+        color = colors[finding.severity]
+
+        console.print(f"[{color}]{finding.title}[/{color}]")
+        console.print(f"  {finding.explanation}")
+        console.print(f"  [bold]Next step:[/bold] {finding.action}")
+
+
+def _format_ms(value: float | None) -> str:
+    return "—" if value is None else f"{value:.1f} ms"
 
 
 def _print_report(report: Report, console: Console) -> None:
@@ -142,7 +163,6 @@ def _print_report(report: Report, console: Console) -> None:
         )
 
     console.print(table)
-
     console.print(
         "[dim]* Connection type is inferred from "
         "the adapter's name/description.[/dim]"
@@ -151,10 +171,8 @@ def _print_report(report: Report, console: Console) -> None:
     if report.checks:
         checks_table = Table(title="Public Connectivity Checks")
 
-        checks_table.add_column("Host")
-        checks_table.add_column("DNS")
-        checks_table.add_column("TCP 443")
-        checks_table.add_column("Explanation")
+        for label in ("Host", "DNS", "TCP 443", "Explanation"):
+            checks_table.add_column(label)
 
         for check in report.checks:
             checks_table.add_row(
@@ -175,26 +193,10 @@ def _print_report(report: Report, console: Console) -> None:
     )
 
 
-def _print_findings(findings, console: Console) -> None:
-    colors = {
-        "good": "green",
-        "warning": "yellow",
-        "critical": "red",
-        "info": "cyan",
-    }
-
-    for finding in findings:
-        color = colors[finding.severity]
-        console.print(f"[{color}]{finding.title}[/{color}]")
-        console.print(f"  {finding.explanation}")
-        console.print(f"  [bold]Next step:[/bold] {finding.action}")
-
-
-def _format_ms(value: float | None) -> str:
-    return "—" if value is None else f"{value:.1f} ms"
-
-
-def _print_latency(report: LatencyReport, console: Console) -> None:
+def _print_latency(
+    report: LatencyReport,
+    console: Console,
+) -> None:
     console.print(Panel.fit(
         f"NetDoctor v{__version__} | IPv4 ICMP responsiveness",
         title="Latency Report",
@@ -244,33 +246,108 @@ def _print_latency(report: LatencyReport, console: Console) -> None:
 
     console.print("\n[bold]What NetDoctor found[/bold]")
     _print_findings(report.findings, console)
+    console.print(f"\n[dim]{report.note}[/dim]")
+
+
+def _print_crosscheck(
+    report: CrosscheckReport,
+    console: Console,
+) -> None:
+    console.print(Panel.fit(
+        f"NetDoctor v{__version__} | ICMP versus TCP port 443",
+        title="Network Investigation",
+    ))
+
+    tcp_by_ip = {
+        target.address: target
+        for target in report.tcp
+    }
+
+    table = Table(
+        title="Measurements to the Same IPv4 Addresses"
+    )
+
+    for label in (
+        "Destination",
+        "ICMP replies",
+        "ICMP median",
+        "TCP connects",
+        "TCP median",
+    ):
+        table.add_column(label, overflow="fold")
+
+    for target in report.latency.targets:
+        tcp = tcp_by_ip.get(target.address)
+
+        table.add_row(
+            f"{target.name} ({target.address})",
+            f"{target.replies}/{target.sent}",
+            _format_ms(target.median_ms),
+            (
+                f"{tcp.connected}/{tcp.sent}"
+                if tcp is not None else "Not tested"
+            ),
+            (
+                _format_ms(tcp.median_ms)
+                if tcp is not None else "—"
+            ),
+        )
+
+    console.print(table)
+
+    console.print("\n[bold]What NetDoctor found[/bold]")
+    _print_findings(report.findings, console)
 
     console.print(f"\n[dim]{report.note}[/dim]")
+
+
+def _error(
+    code: str,
+    message: str,
+    as_json: bool,
+    console: Console,
+) -> int:
+    if as_json:
+        print(json.dumps({
+            "error": {
+                "code": code,
+                "message": message,
+            }
+        }))
+    else:
+        console.print(f"[red]{code}: {message}[/red]")
+
+    return 2
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
 
+    is_probe_command = args.command in (
+        "latency",
+        "investigate",
+    )
+
+    maximum_timeout = 5 if is_probe_command else 10
+
     if (
         not math.isfinite(args.timeout)
-        or not 0.1 <= args.timeout <= (
-            5 if args.command == "latency" else 10
-        )
+        or not 0.1 <= args.timeout <= maximum_timeout
     ):
         parser.error(
-            "--timeout must be between 0.1 and 5 seconds for latency, "
-            "or 0.1 and 10 for scan"
+            f"--timeout must be between 0.1 and "
+            f"{maximum_timeout} seconds"
         )
 
-    if args.command == "latency":
+    if is_probe_command:
         args.count = 6 if args.count is None else args.count
         args.interval = 0.25 if args.interval is None else args.interval
 
         if args.offline:
             parser.error(
                 "--offline is only available with scan; "
-                "latency sends ICMP requests"
+                "these commands send network probes"
             )
 
         if not 2 <= args.count <= 12:
@@ -295,7 +372,8 @@ def main(argv: list[str] | None = None) -> int:
         or args.interval is not None
     ):
         parser.error(
-            "--target, --count and --interval are for latency only"
+            "--target, --count and --interval "
+            "are for latency/investigate only"
         )
 
     logging.basicConfig(
@@ -311,10 +389,11 @@ def main(argv: list[str] | None = None) -> int:
             "Reading Windows network adapters, "
             "IP configuration and default routes..."
         )
+
         snapshot = collect_snapshot()
 
         if args.command == "latency":
-            result = measure_latency(
+            report = measure_latency(
                 snapshot,
                 count=args.count,
                 timeout_ms=round(args.timeout * 1000),
@@ -327,12 +406,38 @@ def main(argv: list[str] | None = None) -> int:
 
             if args.as_json:
                 print(json.dumps(
-                    result.to_dict(),
+                    report.to_dict(),
                     indent=2,
                     ensure_ascii=False,
                 ))
             else:
-                _print_latency(result, Console())
+                _print_latency(report, Console())
+
+            return 0
+
+        if args.command == "investigate":
+            report = run_crosscheck(
+                snapshot,
+                count=args.count,
+                timeout_ms=round(args.timeout * 1000),
+                interval=args.interval,
+                targets=tuple(args.target),
+                on_icmp=lambda name, address: LOG.info(
+                    "ICMP to %s (%s)...", name, address
+                ),
+                on_tcp=lambda name, address: LOG.info(
+                    "TCP port 443 to %s (%s)...", name, address
+                ),
+            )
+
+            if args.as_json:
+                print(json.dumps(
+                    report.to_dict(),
+                    indent=2,
+                    ensure_ascii=False,
+                ))
+            else:
+                _print_crosscheck(report, Console())
 
             return 0
 
@@ -346,8 +451,12 @@ def main(argv: list[str] | None = None) -> int:
                     "Checking DNS and TCP port 443 for %s...",
                     host,
                 )
+
                 results.append(
-                    check_endpoint(host, timeout=args.timeout)
+                    check_endpoint(
+                        host,
+                        timeout=args.timeout,
+                    )
                 )
 
             checks = tuple(results)
@@ -355,10 +464,14 @@ def main(argv: list[str] | None = None) -> int:
         report = diagnose(snapshot, checks)
 
     except DiscoveryError as exc:
-        return _error("ND-101", str(exc), args.as_json, console)
+        return _error(
+            "ND-101", str(exc), args.as_json, console
+        )
 
     except (LatencyError, ProbeError) as exc:
-        return _error("ND-201", str(exc), args.as_json, console)
+        return _error(
+            "ND-201", str(exc), args.as_json, console
+        )
 
     if args.as_json:
         print(json.dumps(
@@ -370,22 +483,3 @@ def main(argv: list[str] | None = None) -> int:
         _print_report(report, Console())
 
     return 0
-
-
-def _error(
-    code: str,
-    message: str,
-    as_json: bool,
-    console: Console,
-) -> int:
-    if as_json:
-        print(json.dumps({
-            "error": {
-                "code": code,
-                "message": message,
-            }
-        }))
-    else:
-        console.print(f"[red]{code}: {message}[/red]")
-
-    return 2
