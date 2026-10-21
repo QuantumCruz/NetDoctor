@@ -1,48 +1,164 @@
-
 import json
 from unittest.mock import patch
 
+import pytest
+
 from netdoctor.cli import main
+from netdoctor.icmp import EchoResult, ProbeError
+from netdoctor.latency import LatencyReport, _summarize
 from netdoctor.models import Adapter, Snapshot
 from netdoctor.windows import DiscoveryError
 
 
+def _snapshot():
+    return Snapshot(
+        (
+            Adapter(
+                1,
+                "Ethernet",
+                "Ethernet adapter",
+                "Up",
+                "1 Gbps",
+                "Ethernet (inferred)",
+                ("192.168.0.2",),
+                (),
+                (),
+            ),
+        ),
+        (),
+        (),
+    )
+
+
 def test_json_offline_does_not_contact_internet(capsys):
-    snapshot = Snapshot((Adapter(1, "Ethernet", "Ethernet adapter", "Up", "1 Gbps",
-                                 "Ethernet (inferred)", ("192.168.0.2",), (), ()),), (), ())
-    with patch("netdoctor.cli.collect_snapshot", return_value=snapshot), patch(
-        "netdoctor.cli.check_endpoint", side_effect=AssertionError("Unexpected internet access")
+    with (
+        patch(
+            "netdoctor.cli.collect_snapshot",
+            return_value=_snapshot(),
+        ),
+        patch(
+            "netdoctor.cli.check_endpoint",
+            side_effect=AssertionError("Unexpected internet access"),
+        ),
     ):
         assert main(["scan", "--offline", "--json"]) == 0
+
     report = json.loads(capsys.readouterr().out)
+
     assert report["online_status"] == "not_tested"
     assert report["snapshot"]["adapters"][0]["name"] == "Ethernet"
 
 
 def test_cli_reports_discovery_failure_without_traceback(capsys):
-    with patch("netdoctor.cli.collect_snapshot", side_effect=DiscoveryError("Unavailable")):
+    with patch(
+        "netdoctor.cli.collect_snapshot",
+        side_effect=DiscoveryError("Unavailable"),
+    ):
         assert main(["--json"]) == 2
+
     report = json.loads(capsys.readouterr().out)
     assert report["error"]["code"] == "ND-101"
 
 
 def test_json_reports_incomplete_routes_instead_of_false_missing_route(capsys):
-    snapshot = Snapshot((Adapter(1, "WiFi", "Wireless adapter", "Up", "100 Mbps",
-                                 "Wi-Fi (inferred)", ("172.31.119.195",), (), ()),), (),
-                        ("Windows could not provide default-route information.",), False)
-    with patch("netdoctor.cli.collect_snapshot", return_value=snapshot):
+    snapshot = Snapshot(
+        _snapshot().adapters,
+        (),
+        ("Windows could not provide default-route information.",),
+        False,
+    )
+
+    with patch(
+        "netdoctor.cli.collect_snapshot",
+        return_value=snapshot,
+    ):
         assert main(["scan", "--offline", "--json"]) == 0
+
     report = json.loads(capsys.readouterr().out)
+
     assert report["snapshot"]["routes_complete"] is False
-    assert not any(f["title"] == "No usable default route was found" for f in report["findings"])
+
+    assert not any(
+        f["title"] == "No usable default route was found"
+        for f in report["findings"]
+    )
 
 
 def test_readable_report_says_unknown_when_routes_failed(capsys):
-    snapshot = Snapshot((Adapter(1, "WiFi", "Wireless adapter", "Up", "100 Mbps",
-                                 "Wi-Fi (inferred)", ("172.31.119.195",), (), ()),), (),
-                        ("Windows could not provide default-route information.",), False)
-    with patch("netdoctor.cli.collect_snapshot", return_value=snapshot):
+    snapshot = Snapshot(
+        _snapshot().adapters,
+        (),
+        ("Windows could not provide default-route information.",),
+        False,
+    )
+
+    with patch(
+        "netdoctor.cli.collect_snapshot",
+        return_value=snapshot,
+    ):
         assert main(["scan", "--offline"]) == 0
+
     output = capsys.readouterr().out
+
     assert "Cannot determine" in output
     assert "Not found on an active adapter" not in output
+
+
+def test_latency_json_report_integrates(capsys):
+    result = _summarize(
+        "Target",
+        "1.1.1.1",
+        "public",
+        (
+            EchoResult("reply", 25.0, "OK"),
+            EchoResult("reply", 26.0, "OK"),
+        ),
+    )
+
+    with (
+        patch(
+            "netdoctor.cli.collect_snapshot",
+            return_value=_snapshot(),
+        ),
+        patch(
+            "netdoctor.cli.measure_latency",
+            return_value=LatencyReport((result,), ()),
+        ),
+    ):
+        assert main(["latency", "--json"]) == 0
+
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["targets"][0]["median_ms"] == 25.5
+
+
+def test_latency_native_error_is_readable(capsys):
+    with (
+        patch(
+            "netdoctor.cli.collect_snapshot",
+            return_value=_snapshot(),
+        ),
+        patch(
+            "netdoctor.cli.measure_latency",
+            side_effect=ProbeError("Windows ICMP unavailable"),
+        ),
+    ):
+        assert main(["latency", "--json"]) == 2
+
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["error"]["code"] == "ND-201"
+
+
+def test_latency_rejects_offline_mode():
+    with pytest.raises(SystemExit) as result:
+        main(["latency", "--offline"])
+
+    assert result.value.code == 2
+
+
+def test_scan_refuses_latency_flags():
+    with pytest.raises(SystemExit) as result:
+        main(["scan", "--count", "10"])
+
+    assert result.value.code == 2
