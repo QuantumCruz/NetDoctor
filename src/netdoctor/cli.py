@@ -14,6 +14,7 @@ from rich.table import Table
 from netdoctor import __version__
 from netdoctor.checks import TEST_HOSTS, check_endpoint, diagnose
 from netdoctor.crosscheck import CrosscheckReport, run_crosscheck
+from netdoctor.dnsdiagnostics import DnsDiagnosticError, DnsReport, diagnose_dns
 from netdoctor.icmp import ProbeError
 from netdoctor.latency import LatencyError, LatencyReport, measure_latency
 from netdoctor.models import Report
@@ -25,12 +26,11 @@ LOG = logging.getLogger("netdoctor")
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="netdoctor",
-        description="Understand your Windows network connection.",
+        prog="netdoctor", description="Understand your Windows network connection.",
     )
     parser.add_argument(
-        "command", nargs="?", choices=["scan", "latency", "investigate", "trace"],
-        default="scan", help="scan (default), latency, investigate, or trace",
+        "command", nargs="?", choices=["scan", "latency", "investigate", "trace", "dns"],
+        default="scan", help="scan (default), latency, investigate, trace, or dns",
     )
     parser.add_argument(
         "--offline", action="store_true",
@@ -39,7 +39,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--json", action="store_true", dest="as_json", help="Output JSON")
     parser.add_argument(
         "--timeout", type=float, default=None, metavar="SECONDS",
-        help="Per-probe timeout (trace defaults to 0.8 seconds; others 2)",
+        help="Per-probe timeout (trace: 0.8 s; dns: 1.5 s; others: 2 s)",
     )
     parser.add_argument("--verbose", action="store_true", help="Show diagnostic progress")
     parser.add_argument(
@@ -57,6 +57,10 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--hops", type=int, default=None, metavar="N",
         help="Maximum IPv4 hops to trace (1–24, default: 12; trace only)",
+    )
+    parser.add_argument(
+        "--hostname", action="append", default=[], metavar="NAME",
+        help="DNS name to query directly (up to 3, dns only)",
     )
     parser.add_argument(
         "--version", action="version", version=f"NetDoctor {__version__}",
@@ -219,6 +223,28 @@ def _print_trace(report: TraceReport, console: Console) -> None:
     console.print(f"\n[dim]{report.note}[/dim]")
 
 
+def _print_dns(report: DnsReport, console: Console) -> None:
+    console.print(Panel.fit(
+        f"NetDoctor v{__version__} | Configured DNS server checks",
+        title="DNS Diagnostics",
+    ))
+    console.print(f"[bold]Default-route interface:[/bold] {report.interface or 'Not determined'}")
+    console.print(f"[bold]Configured IPv4 DNS servers:[/bold] {', '.join(report.resolvers) or 'None found'}")
+    if report.observations:
+        table = Table(title="Direct UDP DNS A-record Queries")
+        for label in ("Resolver", "Hostname", "Status", "Response time", "IPv4 answers"):
+            table.add_column(label, overflow="fold")
+        for result in report.observations:
+            table.add_row(
+                result.resolver, result.hostname, result.status.replace("_", " "),
+                _format_ms(result.elapsed_ms), ", ".join(result.addresses) or "—",
+            )
+        console.print(table)
+    console.print("\n[bold]What NetDoctor found[/bold]")
+    _print_findings(report.findings, console)
+    console.print(f"\n[dim]{report.note}[/dim]")
+
+
 def _error(code: str, message: str, as_json: bool, console: Console) -> int:
     if as_json:
         print(json.dumps({"error": {"code": code, "message": message}}))
@@ -232,12 +258,23 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     is_measurement = args.command in ("latency", "investigate", "trace")
     is_trace = args.command == "trace"
+    is_dns = args.command == "dns"
 
     if args.timeout is None:
-        args.timeout = 0.8 if is_trace else 2.0
-    timeout_max = 3 if is_trace else (5 if is_measurement else 10)
+        args.timeout = 0.8 if is_trace else (1.5 if is_dns else 2.0)
+    timeout_max = 3 if is_trace or is_dns else (5 if is_measurement else 10)
     if not math.isfinite(args.timeout) or not 0.1 <= args.timeout <= timeout_max:
         parser.error(f"--timeout must be between 0.1 and {timeout_max} seconds")
+
+    if is_dns:
+        if args.offline:
+            parser.error("--offline is only available with scan; dns sends queries")
+        if args.target or args.count is not None or args.interval is not None or args.hops is not None:
+            parser.error("dns supports --hostname and --timeout, not measurement or trace flags")
+        if len(args.hostname) > 3:
+            parser.error("Specify at most three --hostname values")
+    elif args.hostname:
+        parser.error("--hostname is only available with dns")
 
     if is_measurement:
         if args.offline:
@@ -263,7 +300,7 @@ def main(argv: list[str] | None = None) -> int:
                 parser.error("--interval must be between 0 and 2 seconds")
             if len(args.target) > 3:
                 parser.error("Specify at most three --target values")
-    elif args.target or args.count is not None or args.interval is not None or args.hops is not None:
+    elif not is_dns and (args.target or args.count is not None or args.interval is not None or args.hops is not None):
         parser.error("--target, --count, --interval and --hops require a measurement command")
 
     logging.basicConfig(
@@ -290,6 +327,18 @@ def main(argv: list[str] | None = None) -> int:
     try:
         LOG.info("Reading Windows network adapters, IP configuration and default routes...")
         snapshot = collect_snapshot()
+
+        if is_dns:
+            report = diagnose_dns(
+                snapshot,
+                hostnames=tuple(args.hostname) or ("example.com", "www.microsoft.com"),
+                timeout=args.timeout,
+            )
+            if args.as_json:
+                print(json.dumps(report.to_dict(), indent=2, ensure_ascii=False))
+            else:
+                _print_dns(report, Console())
+            return 0
 
         if args.command == "latency":
             report = measure_latency(
@@ -327,6 +376,8 @@ def main(argv: list[str] | None = None) -> int:
 
     except DiscoveryError as exc:
         return _error("ND-101", str(exc), args.as_json, console)
+    except DnsDiagnosticError as exc:
+        return _error("ND-401", str(exc), args.as_json, console)
     except (LatencyError, ProbeError) as exc:
         return _error("ND-201", str(exc), args.as_json, console)
 
