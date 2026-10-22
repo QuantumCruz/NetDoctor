@@ -20,6 +20,7 @@ from netdoctor.icmp import ProbeError
 from netdoctor.latency import LatencyError, LatencyReport, measure_latency
 from netdoctor.models import Report
 from netdoctor.pathtrace import TraceReport, trace_paths
+from netdoctor.throughput import DownloadConfigError, DownloadReport, measure_download
 from netdoctor.windows import DiscoveryError, collect_snapshot
 
 LOG = logging.getLogger("netdoctor")
@@ -31,9 +32,9 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "command", nargs="?",
-        choices=["scan", "latency", "investigate", "trace", "dns", "doctor"],
+        choices=["scan", "latency", "investigate", "trace", "dns", "doctor", "download"],
         default="scan",
-        help="scan (default), doctor, latency, investigate, trace, or dns",
+        help="scan (default), doctor, latency, investigate, trace, dns, or download",
     )
     parser.add_argument(
         "--offline", action="store_true",
@@ -42,7 +43,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--json", action="store_true", dest="as_json", help="Output JSON")
     parser.add_argument(
         "--timeout", type=float, default=None, metavar="SECONDS",
-        help="Per-probe timeout (trace: 0.8 s; dns/doctor: 1.5 s; others: 2 s)",
+        help="Per-probe timeout (trace: 0.8 s; dns/doctor: 1.5 s; download: 5 s; others: 2 s)",
     )
     parser.add_argument("--verbose", action="store_true", help="Show diagnostic progress")
     parser.add_argument(
@@ -64,6 +65,10 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--hostname", action="append", default=[], metavar="NAME",
         help="DNS name to query directly (up to 3, dns only)",
+    )
+    parser.add_argument(
+        "--size-mib", type=int, default=None, metavar="N",
+        help="Download sample size: 1, 2, 4 or 8 MiB (default: 2; download only)",
     )
     parser.add_argument(
         "--version", action="version", version=f"NetDoctor {__version__}"
@@ -252,18 +257,37 @@ def _print_doctor(report: DoctorReport, console: Console) -> None:
     console.print(f"[bold]{report.summary}[/bold]")
     console.print(f"Internet-facing interface: {report.interface or 'Not determined'}")
     console.print(f"Reported gateway: {report.gateway or 'Not determined'}")
-
     table = Table(title="Checks performed")
     for label in ("Check", "State", "Evidence"):
         table.add_column(label, overflow="fold")
     for step in report.steps:
         table.add_row(step.name.replace("_", " ").title(), step.status.title(), step.detail)
     console.print(table)
-
     console.print("\n[bold]What NetDoctor found[/bold]")
     _print_findings(report.findings, console)
     console.print(f"\n[dim]{report.note}[/dim]")
     console.print("[dim]For details: netdoctor scan | latency | dns | investigate | trace[/dim]")
+
+
+def _print_download(report: DownloadReport, console: Console) -> None:
+    console.print(Panel.fit(
+        f"NetDoctor v{__version__} | Bounded HTTPS download sample",
+        title="Download Diagnostics",
+    ))
+    table = Table(title="Single-Stream Download Result")
+    table.add_column("Measurement")
+    table.add_column("Observed value")
+    table.add_row("Source", report.destination)
+    table.add_row("Status", report.status.replace("_", " ").title())
+    table.add_row("Received", f"{report.received_bytes / 1_048_576:.2f} / {report.requested_bytes / 1_048_576:.0f} MiB")
+    table.add_row("First byte", _format_ms(report.first_byte_ms))
+    table.add_row("Full request", _format_ms(report.elapsed_ms))
+    table.add_row("Observed average", f"{report.average_mbps:.2f} Mbit/s" if report.average_mbps is not None else "Not established")
+    table.add_row("Confidence", report.quality.replace("_", " ").title())
+    console.print(table)
+    console.print("\n[bold]What NetDoctor found[/bold]")
+    _print_findings(report.findings, console)
+    console.print(f"\n[dim]{report.note}[/dim]")
 
 
 def _error(code: str, message: str, as_json: bool, console: Console) -> int:
@@ -281,12 +305,25 @@ def main(argv: list[str] | None = None) -> int:
     is_trace = args.command == "trace"
     is_dns = args.command == "dns"
     is_doctor = args.command == "doctor"
+    is_download = args.command == "download"
 
     if args.timeout is None:
-        args.timeout = 0.8 if is_trace else (1.5 if is_dns or is_doctor else 2.0)
-    timeout_max = 3 if is_trace or is_dns or is_doctor else (5 if is_measurement else 10)
+        args.timeout = (0.8 if is_trace else 5.0 if is_download else
+                        1.5 if is_dns or is_doctor else 2.0)
+    timeout_max = (3 if is_trace or is_dns or is_doctor else
+                   5 if is_measurement else 10)
     if not math.isfinite(args.timeout) or not 0.1 <= args.timeout <= timeout_max:
         parser.error(f"--timeout must be between 0.1 and {timeout_max} seconds")
+
+    if is_download:
+        if (args.offline or args.target or args.count is not None or
+            args.interval is not None or args.hops is not None or args.hostname):
+            parser.error("download supports only --size-mib, --timeout, --json and --verbose")
+        args.size_mib = 2 if args.size_mib is None else args.size_mib
+        if args.size_mib not in (1, 2, 4, 8):
+            parser.error("--size-mib must be 1, 2, 4, or 8")
+    elif args.size_mib is not None:
+        parser.error("--size-mib is only available with download")
 
     if is_dns or is_doctor:
         if args.offline:
@@ -297,7 +334,7 @@ def main(argv: list[str] | None = None) -> int:
             parser.error("--hostname is only available with dns")
         if is_dns and len(args.hostname) > 3:
             parser.error("Specify at most three --hostname values")
-    elif args.hostname:
+    elif args.hostname and not is_download:
         parser.error("--hostname is only available with dns")
 
     if is_measurement:
@@ -324,7 +361,7 @@ def main(argv: list[str] | None = None) -> int:
                 parser.error("--interval must be between 0 and 2 seconds")
             if len(args.target) > 3:
                 parser.error("Specify at most three --target values")
-    elif not is_dns and not is_doctor and (
+    elif not is_dns and not is_doctor and not is_download and (
         args.target or args.count is not None or args.interval is not None or args.hops is not None
     ):
         parser.error("--target, --count, --interval and --hops require a measurement command")
@@ -334,6 +371,18 @@ def main(argv: list[str] | None = None) -> int:
         format="%(levelname)s: %(message)s", stream=sys.stderr,
     )
     console = Console(stderr=True)
+
+    if is_download:
+        try:
+            LOG.info("Downloading a maximum of %d MiB from Cloudflare's test endpoint...", args.size_mib)
+            report = measure_download(size_mib=args.size_mib, timeout=args.timeout)
+        except DownloadConfigError as exc:
+            return _error("ND-501", str(exc), args.as_json, console)
+        if args.as_json:
+            print(json.dumps(report.to_dict(), indent=2, ensure_ascii=False))
+        else:
+            _print_download(report, Console())
+        return 0
 
     if is_trace:
         try:
