@@ -15,6 +15,9 @@ dev = ["pytest>=8,<10"]
 [project.scripts]
 netdoctor = "netdoctor.cli:main"
 
+[project.gui-scripts]
+netdoctor-desktop = "netdoctor.desktop:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
