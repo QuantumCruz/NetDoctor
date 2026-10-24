@@ -1,3 +1,4 @@
+
 [build-system]
 requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
@@ -11,12 +12,14 @@ dependencies = ["rich>=13.7,<15"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8,<10"]
+desktop = ["pywebview>=5,<7"]
 
 [project.scripts]
 netdoctor = "netdoctor.cli:main"
 
 [project.gui-scripts]
-netdoctor-desktop = "netdoctor.desktop:main"
+netdoctor-desktop = "netdoctor.webdesktop:main"
+netdoctor-legacy-desktop = "netdoctor.desktop:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
