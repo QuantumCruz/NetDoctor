@@ -1,4 +1,3 @@
-
 const mount = document.getElementById('root');
 
 function showStartupError(reason) {
@@ -14,6 +13,7 @@ function showStartupError(reason) {
   mount.replaceChildren();
 
   const panel = document.createElement('section');
+
   panel.style.cssText = `
     max-width: 780px;
     margin: 8vh auto;
@@ -27,14 +27,18 @@ function showStartupError(reason) {
   `;
 
   const heading = document.createElement('h1');
-  heading.textContent = 'NetDoctor could not start the dashboard';
+
+  heading.textContent =
+    'NetDoctor could not start the dashboard';
 
   const explanation = document.createElement('p');
+
   explanation.textContent =
     'The window opened, but the dashboard encountered an error. ' +
     'The message below identifies what needs fixing.';
 
   const detail = document.createElement('pre');
+
   detail.style.cssText = `
     white-space: pre-wrap;
     overflow-wrap: anywhere;
@@ -43,19 +47,30 @@ function showStartupError(reason) {
     color: #ffd7ac;
     border-radius: 8px;
   `;
+
   detail.textContent = message;
 
-  panel.append(heading, explanation, detail);
+  panel.append(
+    heading,
+    explanation,
+    detail
+  );
+
   mount.append(panel);
 }
 
 window.addEventListener('error', event => {
-  showStartupError(event.error || event.message);
+  showStartupError(
+    event.error || event.message
+  );
 });
 
-window.addEventListener('unhandledrejection', event => {
-  showStartupError(event.reason);
-});
+window.addEventListener(
+  'unhandledrejection',
+  event => {
+    showStartupError(event.reason);
+  }
+);
 
 if (!mount) {
   console.error(
@@ -66,22 +81,37 @@ if (!mount) {
     import('react'),
     import('react-dom/client'),
     import('./App.jsx'),
+    import('./NetworkContextNotice.jsx'),
     import('./styles.css'),
   ])
-    .then(([ReactModule, DOMModule, AppModule]) => {
-      const React = ReactModule.default || ReactModule;
-      const App = AppModule.default;
+    .then(([
+      ReactModule,
+      DOMModule,
+      AppModule,
+      NoticeModule,
+    ]) => {
+      const React =
+        ReactModule.default || ReactModule;
 
-      if (typeof App !== 'function') {
+      const App = AppModule.default;
+      const Notice = NoticeModule.default;
+
+      if (
+        typeof App !== 'function' ||
+        typeof Notice !== 'function'
+      ) {
         throw new Error(
-          'App.jsx did not export a React component as default.'
+          'NetDoctor React components could not load.'
         );
       }
 
       class StartupBoundary extends React.Component {
         constructor(props) {
           super(props);
-          this.state = { error: null };
+
+          this.state = {
+            error: null,
+          };
         }
 
         static getDerivedStateFromError(error) {
@@ -136,7 +166,12 @@ if (!mount) {
           React.createElement(
             React.StrictMode,
             null,
-            React.createElement(App)
+            React.createElement(
+              React.Fragment,
+              null,
+              React.createElement(App),
+              React.createElement(Notice)
+            )
           )
         )
       );
