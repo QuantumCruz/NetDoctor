@@ -1,5 +1,8 @@
 
-"""Local React bridge: read-only diagnostics, opt-in public IP, and stability history."""
+"""Local React bridge: read-only diagnostics, opt-in public IP and stability history.
+
+Activity insights use prior measurements only; opening the page sends no probes.
+"""
 
 import json
 import math
@@ -9,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from netdoctor.activity_quality import evaluate_activities
 from netdoctor.desktop_support import explain
 from netdoctor.doctor import run_doctor
 from netdoctor.network_intel import collect_intelligence
@@ -16,81 +20,50 @@ from netdoctor.public_network import PublicLookupError, inspect_public_network
 from netdoctor.stability import StabilityHistory, StabilityMonitor
 from netdoctor.windows import collect_snapshot
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 WEB_BUILD = PROJECT_ROOT / "ui" / "dist" / "index.html"
 
 
 def _data_dir() -> Path:
     local = os.environ.get("LOCALAPPDATA")
-    return (
-        Path(local) / "NetDoctor"
-        if local
-        else Path.home() / ".netdoctor"
-    )
+    return Path(local) / "NetDoctor" if local else Path.home() / ".netdoctor"
 
 
-def _value(
-    raw: Any,
-    *,
-    maximum: float,
-) -> float | None:
+def _value(raw: Any, *, maximum: float) -> float | None:
     if raw is None:
         return None
 
-    if isinstance(raw, bool) or not isinstance(
-        raw, (int, float)
-    ):
-        raise ValueError(
-            "Invalid speed measurement type."
-        )
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+        raise ValueError("Invalid speed measurement type.")
 
-    value = float(raw)
+    number = float(raw)
+    if not math.isfinite(number) or number < 0 or number > maximum:
+        raise ValueError("Speed measurement is outside supported bounds.")
 
-    if (
-        not math.isfinite(value)
-        or value < 0
-        or value > maximum
-    ):
-        raise ValueError(
-            "Speed measurement is outside supported bounds."
-        )
-
-    return round(value, 3)
+    return round(number, 3)
 
 
-def _wifi_adapter_fallback(
-    snapshot,
-    network: dict,
-) -> None:
-    """Use Windows adapter data without bypassing WLAN location restrictions."""
+def _wifi_adapter_fallback(snapshot, network: dict) -> None:
+    """Use Windows adapter data even if WLAN association is location-restricted."""
     wifi = network.get("wifi")
-
     if not isinstance(wifi, dict):
         return
 
     candidates = [
         adapter
         for adapter in snapshot.adapters
-        if adapter.is_up
-        and re.search(
+        if adapter.is_up and re.search(
             r"wi[ -]?fi|wireless|wlan|802\.11",
             f"{adapter.name} {adapter.description}",
             re.I,
         )
     ]
 
-    route = (
-        snapshot.preferred_route("IPv4")
-        or snapshot.preferred_route("IPv6")
-    )
-
+    route = snapshot.preferred_route("IPv4") or snapshot.preferred_route("IPv6")
     selected = next(
         (
-            adapter
-            for adapter in candidates
-            if route
-            and adapter.index == route.interface_index
+            adapter for adapter in candidates
+            if route and adapter.index == route.interface_index
         ),
         None,
     )
@@ -103,9 +76,7 @@ def _wifi_adapter_fallback(
 
     wifi["adapter_name"] = selected.name
     wifi["adapter_description"] = selected.description
-    wifi["adapter_link_speed"] = (
-        selected.link_speed or None
-    )
+    wifi["adapter_link_speed"] = selected.link_speed or None
 
     if wifi.get("status") != "Connected":
         wifi.update({
@@ -123,7 +94,7 @@ def _wifi_adapter_fallback(
 
 
 class DashboardAPI:
-    """Small local API; network watches and external lookups require user action."""
+    """A narrow local desktop API; tests are explicit and never start themselves."""
 
     def __init__(
         self,
@@ -144,9 +115,7 @@ class DashboardAPI:
         self._data_dir = data_dir or _data_dir()
 
         self._monitor = monitor or StabilityMonitor(
-            StabilityHistory(
-                self._data_dir / "stability.sqlite3"
-            ),
+            StabilityHistory(self._data_dir / "stability.sqlite3"),
             collector=collector,
         )
 
@@ -155,15 +124,9 @@ class DashboardAPI:
         return {
             "status": "unverified",
             "headline": "Connection check unavailable",
-            "explanation": (
-                "NetDoctor could not finish the short network check."
-            ),
-            "observation": (
-                "No reliable conclusion was collected."
-            ),
-            "next_step": (
-                "Check your Windows connection and try again."
-            ),
+            "explanation": "NetDoctor could not finish the short network check.",
+            "observation": "No reliable conclusion was collected.",
+            "next_step": "Check your Windows connection and try again.",
             "interface": "Not determined",
             "gateway": "Not determined",
             "vpn": "Not checked",
@@ -189,23 +152,13 @@ class DashboardAPI:
             "explanation": guide.explanation,
             "observation": guide.observation,
             "next_step": guide.next_step,
-            "interface": (
-                report.interface or "Not determined"
-            ),
-            "gateway": (
-                report.gateway or "Not determined"
-            ),
+            "interface": report.interface or "Not determined",
+            "gateway": report.gateway or "Not determined",
         }
 
         try:
-            detail = self._intelligence(
-                snapshot
-            ).to_dict()
-
-            _wifi_adapter_fallback(
-                snapshot,
-                detail,
-            )
+            detail = self._intelligence(snapshot).to_dict()
+            _wifi_adapter_fallback(snapshot, detail)
 
             result.update({
                 "network": detail,
@@ -215,23 +168,16 @@ class DashboardAPI:
                 "isp": detail["isp"],
                 "cgnat": detail["cgnat"],
             })
-
         except Exception:
             pass
 
         return result
 
-    def check_public_connection(
-        self,
-        router_wan_ipv4: str = "",
-    ) -> dict:
+    def check_public_connection(self, router_wan_ipv4: str = "") -> dict:
         try:
-            if not isinstance(
-                router_wan_ipv4, str
-            ):
+            if not isinstance(router_wan_ipv4, str):
                 raise ValueError(
-                    "Enter a numeric router WAN IPv4 address "
-                    "or leave it empty."
+                    "Enter a numeric router WAN IPv4 address or leave it empty."
                 )
 
             snapshot = self._collector()
@@ -239,44 +185,27 @@ class DashboardAPI:
                 snapshot,
                 router_wan_ipv4=router_wan_ipv4,
             )
+            return {"ok": True, "report": report.to_dict()}
 
-            return {
-                "ok": True,
-                "report": report.to_dict(),
-            }
-
-        except (
-            ValueError,
-            PublicLookupError,
-        ) as exc:
-            return {
-                "ok": False,
-                "error": str(exc),
-            }
+        except (ValueError, PublicLookupError) as exc:
+            return {"ok": False, "error": str(exc)}
 
         except Exception:
             return {
                 "ok": False,
                 "error": (
-                    "Public connection information is unavailable "
-                    "right now. No network settings were changed."
+                    "Public connection information is unavailable right now. "
+                    "No network settings were changed."
                 ),
             }
 
-    def start_stability_watch(
-        self,
-        minutes: int = 10,
-    ) -> dict:
+    def start_stability_watch(self, minutes: int = 10) -> dict:
         try:
-            return self._monitor.start(
-                minutes
-            )
+            return self._monitor.start(minutes)
         except Exception:
             return {
                 "ok": False,
-                "message": (
-                    "The connection watch could not start."
-                ),
+                "message": "The connection watch could not start.",
             }
 
     def stop_stability_watch(self) -> dict:
@@ -285,9 +214,7 @@ class DashboardAPI:
         except Exception:
             return {
                 "ok": False,
-                "message": (
-                    "The connection watch could not be stopped normally."
-                ),
+                "message": "The connection watch could not be stopped normally.",
             }
 
     def get_stability_status(self) -> dict:
@@ -298,76 +225,59 @@ class DashboardAPI:
                 "running": False,
                 "message": "Connection history is unavailable.",
                 "samples": [],
-                "counts": {
-                    "ok": 0,
-                    "mixed": 0,
-                    "failed": 0,
-                },
+                "counts": {"ok": 0, "mixed": 0, "failed": 0},
             }
 
-    def load_previous_speed(
-        self,
-    ) -> dict | None:
+    def get_activity_outlook(self, reading: dict | None = None) -> dict:
+        """Analyze an existing measurement and history without network requests."""
+        try:
+            measurement = (
+                self._validated(reading)
+                if reading is not None
+                else self.load_previous_speed()
+            )
+        except (ValueError, TypeError, KeyError):
+            measurement = None
+
+        try:
+            samples = self._monitor.status().get("samples", [])
+        except Exception:
+            samples = []
+
+        return evaluate_activities(measurement, samples=samples)
+
+    def load_previous_speed(self) -> dict | None:
         try:
             raw = json.loads(
-                (
-                    self._data_dir / "last-speed.json"
-                ).read_text(encoding="utf-8")
+                (self._data_dir / "last-speed.json").read_text(
+                    encoding="utf-8"
+                )
             )
-
             return self._validated(raw)
-
-        except (
-            OSError,
-            ValueError,
-            TypeError,
-            KeyError,
-        ):
+        except (OSError, ValueError, TypeError, KeyError):
             return None
 
     @staticmethod
-    def _validated(
-        reading: dict,
-    ) -> dict:
+    def _validated(reading: dict) -> dict:
         if not isinstance(reading, dict):
-            raise ValueError(
-                "Invalid speed report."
-            )
+            raise ValueError("Invalid speed report.")
 
-        tested_at = reading.get(
-            "tested_at"
-        )
-
-        if (
-            not isinstance(tested_at, str)
-            or len(tested_at) > 40
-        ):
-            raise ValueError(
-                "Invalid test timestamp."
-            )
+        tested_at = reading.get("tested_at")
+        if not isinstance(tested_at, str) or len(tested_at) > 40:
+            raise ValueError("Invalid test timestamp.")
 
         try:
             parsed = datetime.fromisoformat(
-                tested_at.replace(
-                    "Z", "+00:00"
-                )
+                tested_at.replace("Z", "+00:00")
             )
         except ValueError as exc:
-            raise ValueError(
-                "Invalid test timestamp."
-            ) from exc
+            raise ValueError("Invalid test timestamp.") from exc
 
         if parsed.tzinfo is None:
-            raise ValueError(
-                "Test timestamp must include a timezone."
-            )
+            raise ValueError("Test timestamp must include a timezone.")
 
         return {
-            "tested_at": (
-                parsed.astimezone(
-                    timezone.utc
-                ).isoformat()
-            ),
+            "tested_at": parsed.astimezone(timezone.utc).isoformat(),
             "download_mbps": _value(
                 reading.get("download_mbps"),
                 maximum=100000,
@@ -386,44 +296,21 @@ class DashboardAPI:
             ),
         }
 
-    def save_speed(
-        self,
-        reading: dict,
-    ) -> dict:
-        validated = self._validated(
-            reading
-        )
+    def save_speed(self, reading: dict) -> dict:
+        validated = self._validated(reading)
 
-        self._data_dir.mkdir(
-            parents=True,
-            exist_ok=True,
-        )
-
-        path = (
-            self._data_dir / "last-speed.json"
-        )
-
-        temporary = (
-            self._data_dir / "last-speed.json.tmp"
-        )
+        self._data_dir.mkdir(parents=True, exist_ok=True)
+        path = self._data_dir / "last-speed.json"
+        temporary = self._data_dir / "last-speed.json.tmp"
 
         try:
             temporary.write_text(
-                json.dumps(
-                    validated,
-                    indent=2,
-                ),
+                json.dumps(validated, indent=2),
                 encoding="utf-8",
             )
-
-            temporary.replace(
-                path
-            )
-
+            temporary.replace(path)
         finally:
-            temporary.unlink(
-                missing_ok=True
-            )
+            temporary.unlink(missing_ok=True)
 
         return {"saved": True}
 
@@ -449,7 +336,6 @@ def main() -> int:
         return 2
 
     api = DashboardAPI()
-
     webview.create_window(
         "NetDoctor",
         url=str(WEB_BUILD),
@@ -460,9 +346,7 @@ def main() -> int:
     )
 
     try:
-        webview.start(
-            http_server=True
-        )
+        webview.start(http_server=True)
     finally:
         api.shutdown()
 

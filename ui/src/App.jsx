@@ -3,11 +3,12 @@ import { useEffect, useRef, useState } from 'react';
 import SpeedTest from '@cloudflare/speedtest';
 import {
   Activity, ArrowDownToLine, ArrowUpFromLine, CheckCircle2,
-  Gauge, Globe2, Laptop2, RefreshCw, Router, Shield, Signal, Wifi, Zap,
+  Gauge, Globe2, Laptop2, RefreshCw, Router, Shield,
+  Signal, Wifi, Zap, Gamepad2,
 } from 'lucide-react';
 import StabilityPanel from './StabilityPanel.jsx';
+import ActivityPanel from './ActivityPanel.jsx';
 
-// Explicit, small speed test. Never starts without consent.
 const MEASUREMENTS = [
   { type: 'latency', numPackets: 6 },
   { type: 'download', bytes: 100_000, count: 2, bypassMinDuration: true },
@@ -34,15 +35,12 @@ const EMPTY = {
   cgnat: 'Not checked',
 };
 
-function valueOf(results, getter, divisor = 1) {
+function measurement(results, getter, divisor = 1) {
   try {
-    const value = results?.[getter]?.();
-
-    return (
-      typeof value === 'number'
-      && Number.isFinite(value)
-      && value >= 0
-    ) ? value / divisor : null;
+    const n = results?.[getter]?.();
+    return typeof n === 'number' && Number.isFinite(n) && n >= 0
+      ? n / divisor
+      : null;
   } catch {
     return null;
   }
@@ -50,60 +48,38 @@ function valueOf(results, getter, divisor = 1) {
 
 function readings(results) {
   return {
-    download_mbps: valueOf(
-      results,
-      'getDownloadBandwidth',
-      1_000_000,
+    download_mbps: measurement(
+      results, 'getDownloadBandwidth', 1_000_000
     ),
-    upload_mbps: valueOf(
-      results,
-      'getUploadBandwidth',
-      1_000_000,
+    upload_mbps: measurement(
+      results, 'getUploadBandwidth', 1_000_000
     ),
-    latency_ms: valueOf(
-      results,
-      'getUnloadedLatency',
-    ),
-    jitter_ms: valueOf(
-      results,
-      'getUnloadedJitter',
-    ),
+    latency_ms: measurement(results, 'getUnloadedLatency'),
+    jitter_ms: measurement(results, 'getUnloadedJitter'),
     tested_at: new Date().toISOString(),
   };
 }
 
-function speedNumber(value) {
-  return (
-    typeof value === 'number'
-    && Number.isFinite(value)
-  ) ? value.toFixed(value >= 100 ? 0 : 1) : '—';
+function formattedSpeed(value) {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? value.toFixed(value >= 100 ? 0 : 1)
+    : '—';
 }
 
-function millis(value) {
-  return (
-    typeof value === 'number'
-    && Number.isFinite(value)
-  ) ? `${value.toFixed(0)} ms` : 'Not measured';
+function formattedMs(value) {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? `${value.toFixed(0)} ms`
+    : 'Not measured';
 }
 
-function SpeedDial({
-  label,
-  value,
-  direction,
-  busy,
-}) {
+function SpeedDial({ label, value, direction, busy }) {
   const Icon = direction === 'download'
     ? ArrowDownToLine
     : ArrowUpFromLine;
 
-  const maximum = value > 500
-    ? 1000
-    : value > 150
-      ? 500
-      : 150;
-
-  const pct = typeof value === 'number'
-    ? Math.min(100, value / maximum * 100)
+  const maximum = value > 500 ? 1000 : value > 150 ? 500 : 150;
+  const progress = typeof value === 'number'
+    ? Math.min(100, 100 * value / maximum)
     : 0;
 
   return (
@@ -121,25 +97,19 @@ function SpeedDial({
           viewBox="0 0 220 220"
           aria-hidden="true"
         >
-          <circle
-            cx="110"
-            cy="110"
-            r="89"
-            className="dial-track"
-          />
-
+          <circle cx="110" cy="110" r="89" className="dial-track" />
           <circle
             cx="110"
             cy="110"
             r="89"
             className="dial-progress"
             pathLength="100"
-            strokeDasharray={`${pct} 100`}
+            strokeDasharray={`${progress} 100`}
           />
         </svg>
 
         <div className="dial-reading">
-          <strong>{speedNumber(value)}</strong>
+          <strong>{formattedSpeed(value)}</strong>
           <span>Mbps</span>
         </div>
       </div>
@@ -155,18 +125,11 @@ function SpeedDial({
   );
 }
 
-function DataLine({
-  label,
-  value,
-  quiet,
-}) {
+function DataLine({ label, value, quiet }) {
   return (
     <div className="data-line">
       <span>{label}</span>
-
-      <strong
-        className={quiet ? 'unknown' : ''}
-      >
+      <strong className={quiet ? 'unknown' : ''}>
         {value ?? 'Not checked'}
       </strong>
     </div>
@@ -195,9 +158,7 @@ export default function App() {
     setChecking(true);
 
     try {
-      setOverview(
-        await window.pywebview.api.get_overview()
-      );
+      setOverview(await window.pywebview.api.get_overview());
     } catch {
       setOverview({
         ...EMPTY,
@@ -223,38 +184,32 @@ export default function App() {
           setSpeed(previous);
         }
       } catch {
-        // No previous reading is normal.
+        // No saved reading is normal.
       }
     };
 
     if (window.pywebview?.api) {
       ready();
     } else {
-      window.addEventListener(
-        'pywebviewready',
-        ready,
-        { once: true },
-      );
+      window.addEventListener('pywebviewready', ready, {
+        once: true,
+      });
     }
 
     return () => {
       active = false;
-      window.removeEventListener(
-        'pywebviewready',
-        ready,
-      );
+      window.removeEventListener('pywebviewready', ready);
     };
   }, []);
 
   function startSpeedTest() {
-    if (speedState === 'running') {
-      return;
-    }
+    if (speedState === 'running') return;
 
     if (!window.confirm(
       'This test transfers up to about 22.4 MB plus overhead ' +
-      '(11.2 MB download and 11.2 MB upload). Mobile data may be charged. ' +
-      'Traffic goes to an external speed-test provider. Continue?'
+      '(11.2 MB download and 11.2 MB upload). ' +
+      'Mobile data may be charged. Traffic goes to an ' +
+      'external speed-test provider. Continue?'
     )) {
       return;
     }
@@ -278,19 +233,17 @@ export default function App() {
 
       tester.onError = () => {
         setSpeedError(
-          'Some measurement requests failed. Results may be incomplete.'
+          'Some requests failed. Results may be incomplete.'
         );
       };
 
       tester.onFinish = async results => {
         const final = readings(results);
-
         setSpeed(final);
 
-        const complete = (
-          final.download_mbps != null
-          && final.upload_mbps != null
-        );
+        const complete =
+          final.download_mbps != null &&
+          final.upload_mbps != null;
 
         setSpeedState(
           complete ? 'complete' : 'incomplete'
@@ -312,28 +265,26 @@ export default function App() {
       tester.play();
     } catch {
       setSpeedState('incomplete');
-      setSpeedError(
-        'Speed test could not start. Try again.'
-      );
+      setSpeedError('Speed test could not start. Try again.');
       testerRef.current = null;
     }
   }
 
   async function checkPublic() {
     if (
-      publicBusy
-      || !window.pywebview?.api?.check_public_connection
+      publicBusy ||
+      !window.pywebview?.api?.check_public_connection
     ) {
       setPublicError(
-        'Open NetDoctor in its Windows app to use this check.'
+        'Open NetDoctor in its Windows app for this check.'
       );
       return;
     }
 
     if (!window.confirm(
       'NetDoctor will contact IP.SB once over HTTPS. ' +
-      'The service sees your current exit IP address and returns its ' +
-      'network operator. The optional router WAN address stays local. Continue?'
+      'The service sees your exit IP and returns its operator. ' +
+      'Your optional router WAN address stays local. Continue?'
     )) {
       return;
     }
@@ -343,17 +294,16 @@ export default function App() {
     setPublicInfo(null);
 
     try {
-      const result =
+      const response =
         await window.pywebview.api.check_public_connection(
           wanIp.trim()
         );
 
-      if (result?.ok && result.report) {
-        setPublicInfo(result.report);
+      if (response?.ok && response.report) {
+        setPublicInfo(response.report);
       } else {
         setPublicError(
-          result?.error
-          || 'Public connection lookup failed.'
+          response?.error || 'Public connection lookup failed.'
         );
       }
     } catch {
@@ -380,6 +330,14 @@ export default function App() {
     ? new Date(speed.tested_at).toLocaleString()
     : null;
 
+  const nav = [
+    ['dashboard', 'Overview', Gauge],
+    ['diagnosis', 'Diagnosis', Activity],
+    ['activities', 'Activities', Gamepad2],
+    ['stability', 'Stability', Signal],
+    ['details', 'Network details', Laptop2],
+  ];
+
   return (
     <div className="shell">
       <aside className="sidebar">
@@ -387,51 +345,24 @@ export default function App() {
           <div className="brand-icon">
             <Activity size={24} />
           </div>
-
           <span>
             Net<span className="brand-accent">Doctor</span>
           </span>
         </div>
 
-        <div className="menu-label">
-          WORKSPACE
-        </div>
+        <div className="menu-label">WORKSPACE</div>
 
-        <button
-          className={`nav ${
-            tab === 'dashboard' ? 'selected' : ''
-          }`}
-          onClick={() => setTab('dashboard')}
-        >
-          <Gauge size={19} /> Overview
-        </button>
-
-        <button
-          className={`nav ${
-            tab === 'diagnosis' ? 'selected' : ''
-          }`}
-          onClick={() => setTab('diagnosis')}
-        >
-          <Activity size={19} /> Diagnosis
-        </button>
-
-        <button
-          className={`nav ${
-            tab === 'stability' ? 'selected' : ''
-          }`}
-          onClick={() => setTab('stability')}
-        >
-          <Signal size={19} /> Stability
-        </button>
-
-        <button
-          className={`nav ${
-            tab === 'details' ? 'selected' : ''
-          }`}
-          onClick={() => setTab('details')}
-        >
-          <Laptop2 size={19} /> Network details
-        </button>
+        {nav.map(([id, label, Icon]) => (
+          <button
+            key={id}
+            className={`nav ${
+              tab === id ? 'selected' : ''
+            }`}
+            onClick={() => setTab(id)}
+          >
+            <Icon size={19} /> {label}
+          </button>
+        ))}
 
         <div className="sidebar-bottom">
           <span className="side-dot" /> Local Windows app
@@ -445,15 +376,14 @@ export default function App() {
             <p className="eyebrow">
               NETWORK CONTROL CENTER
             </p>
-
             <h1>
-              {tab === 'dashboard'
-                ? 'Your connection at a glance'
-                : tab === 'diagnosis'
-                  ? 'Network diagnosis'
-                  : tab === 'stability'
-                    ? 'Stability & history'
-                    : 'Connection details'}
+              {({
+                dashboard: 'Your connection at a glance',
+                diagnosis: 'Network diagnosis',
+                activities: 'Activity insights',
+                stability: 'Stability & history',
+                details: 'Connection details',
+              })[tab]}
             </h1>
           </div>
 
@@ -488,7 +418,6 @@ export default function App() {
                   onClick={startSpeedTest}
                 >
                   <Zap size={17} />
-
                   {speedState === 'running'
                     ? 'Testing connection…'
                     : speed
@@ -504,7 +433,6 @@ export default function App() {
                   direction="download"
                   busy={speedState === 'running'}
                 />
-
                 <SpeedDial
                   label="UPLOAD"
                   value={speed?.upload_mbps ?? null}
@@ -521,7 +449,6 @@ export default function App() {
                       ? `Last measured: ${when}`
                       : 'Run the test to measure current speed.'}
                 </span>
-
                 <span className="muted">
                   Manual test · About 23 MB plus overhead
                 </span>
@@ -540,7 +467,7 @@ export default function App() {
                 <Activity size={19} />
                 <span>LATENCY</span>
                 <strong>
-                  {millis(speed?.latency_ms)}
+                  {formattedMs(speed?.latency_ms)}
                 </strong>
               </article>
 
@@ -548,7 +475,7 @@ export default function App() {
                 <Signal size={19} />
                 <span>JITTER</span>
                 <strong>
-                  {millis(speed?.jitter_ms)}
+                  {formattedMs(speed?.jitter_ms)}
                 </strong>
               </article>
 
@@ -563,31 +490,23 @@ export default function App() {
               <article className="panel diagnosis-panel">
                 <div className="panel-heading">
                   <h3>
-                    <Shield size={19} />
-                    Connection health
+                    <Shield size={19} /> Connection health
                   </h3>
-
                   <button
                     className="text-link"
                     onClick={refreshOverview}
                     disabled={checking}
                   >
-                    <RefreshCw size={15} />
-                    Recheck
+                    <RefreshCw size={15} /> Recheck
                   </button>
                 </div>
 
                 <div className="health-title">
                   <CheckCircle2
+                    className={good ? 'good' : 'subtle'}
                     size={24}
-                    className={
-                      good ? 'good' : 'subtle'
-                    }
                   />
-
-                  <strong>
-                    {overview.headline}
-                  </strong>
+                  <strong>{overview.headline}</strong>
                 </div>
 
                 <p>{overview.explanation}</p>
@@ -604,13 +523,22 @@ export default function App() {
                 >
                   See what we found →
                 </button>
+
+                <div style={{ marginTop: 16 }}>
+                  <button
+                    className="detail-link"
+                    onClick={() => setTab('activities')}
+                  >
+                    How might this perform for gaming,
+                    streaming and calls? →
+                  </button>
+                </div>
               </article>
 
               <article className="panel">
                 <div className="panel-heading">
                   <h3>
-                    <Router size={19} />
-                    Network snapshot
+                    <Router size={19} /> Network snapshot
                   </h3>
                 </div>
 
@@ -618,35 +546,23 @@ export default function App() {
                   label="Connected via"
                   value={overview.interface}
                 />
-
                 <DataLine
                   label="Wi-Fi"
                   value={wifiLabel}
                 />
-
                 <DataLine
                   label="VPN route"
-                  value={
-                    vpn?.status ?? overview.vpn
-                  }
+                  value={vpn?.status ?? overview.vpn}
                   quiet
                 />
-
                 <DataLine
                   label="Exit IP network"
-                  value={
-                    publicInfo?.exit_network
-                    ?? 'Not checked'
-                  }
+                  value={publicInfo?.exit_network ?? 'Not checked'}
                   quiet={!publicInfo}
                 />
-
                 <DataLine
                   label="CGNAT"
-                  value={
-                    publicInfo?.nat_status
-                    ?? 'Not checked'
-                  }
+                  value={publicInfo?.nat_status ?? 'Not checked'}
                   quiet
                 />
 
@@ -663,36 +579,27 @@ export default function App() {
 
         {tab === 'diagnosis' && (
           <section className="panel details-panel">
-            <p className="eyebrow">
-              WHAT WE FOUND
-            </p>
-
+            <p className="eyebrow">WHAT WE FOUND</p>
             <h2>{overview.headline}</h2>
             <p>{overview.explanation}</p>
 
             <div className="diagnosis-block">
               <strong>Worth knowing</strong>
               <p>
-                {overview.observation
-                  || 'No additional observation yet.'}
+                {overview.observation ||
+                  'No additional observation yet.'}
               </p>
             </div>
 
             {overview.network?.observation && (
               <div className="diagnosis-block">
-                <strong>
-                  Network configuration
-                </strong>
-                <p>
-                  {overview.network.observation}
-                </p>
+                <strong>Network configuration</strong>
+                <p>{overview.network.observation}</p>
               </div>
             )}
 
             <div className="diagnosis-block action">
-              <strong>
-                Recommended next step
-              </strong>
+              <strong>Recommended next step</strong>
               <p>{overview.next_step}</p>
             </div>
 
@@ -708,51 +615,47 @@ export default function App() {
             </button>
 
             <p className="disclaimer">
-              A short diagnostic snapshot is not
-              a guarantee of speed or stability.
+              A short snapshot cannot guarantee speed,
+              stability or any application's performance.
             </p>
           </section>
         )}
 
-        {tab === 'stability' && (
-          <StabilityPanel />
+        {tab === 'activities' && (
+          <ActivityPanel
+            reading={speedState === 'running' ? null : speed}
+          />
         )}
+
+        {tab === 'stability' && <StabilityPanel />}
 
         {tab === 'details' && (
           <section className="panel details-panel">
             <p className="eyebrow">
               ADVANCED INFORMATION
             </p>
-
             <h2>Your network</h2>
 
             <DataLine
               label="Internet-facing adapter"
               value={overview.interface}
             />
-
             <DataLine
               label="Gateway"
               value={overview.gateway}
             />
-
             <DataLine
               label="Wi-Fi adapter"
               value={
-                wifi?.adapter_description
-                ?? wifi?.adapter_name
-                ?? 'Not available'
+                wifi?.adapter_description ??
+                wifi?.adapter_name ??
+                'Not available'
               }
             />
-
             <DataLine
               label="Wi-Fi link speed"
-              value={
-                wifi?.adapter_link_speed
-                ?? 'Not available'
-              }
+              value={wifi?.adapter_link_speed ?? 'Not available'}
             />
-
             <DataLine
               label="Wi-Fi signal"
               value={
@@ -761,50 +664,39 @@ export default function App() {
                   : 'Restricted or unavailable'
               }
             />
-
             <DataLine
               label="Wi-Fi network"
-              value={
-                wifi?.ssid ?? 'Unavailable'
-              }
+              value={wifi?.ssid ?? 'Unavailable'}
             />
 
             <p className="disclaimer">
-              {wifi?.detail ||
+              {wifi?.detail ??
                 'Wi-Fi details have not been collected.'}
             </p>
 
             <DataLine
               label="VPN routing"
-              value={
-                vpn?.status ?? overview.vpn
-              }
+              value={vpn?.status ?? overview.vpn}
             />
-
             <p className="disclaimer">
               {vpn?.detail ?? 'Not checked.'}
             </p>
 
             <DataLine
               label="Proxy settings"
-              value={
-                proxy?.status ?? overview.proxy
-              }
+              value={proxy?.status ?? overview.proxy}
             />
-
             <p className="disclaimer">
               {proxy?.detail ?? 'Not checked.'}
             </p>
 
             <div className="diagnosis-block">
-              <strong>
-                Public IP and provider
-              </strong>
+              <strong>Public IP and provider</strong>
 
               <p>
-                This optional check contacts IP.SB.
-                The operator of your exit IP may be
-                a VPN or proxy, not your subscribed ISP.
+                Optional: contact IP.SB to check the operator
+                of your exit IP. VPNs and proxies may change
+                this result.
               </p>
 
               <label
@@ -823,9 +715,7 @@ export default function App() {
                 type="text"
                 value={wanIp}
                 maxLength={45}
-                onChange={event => setWanIp(
-                  event.target.value
-                )}
+                onChange={event => setWanIp(event.target.value)}
                 placeholder="e.g. 100.64.12.34"
                 style={{
                   margin: '8px 0 12px',
@@ -846,7 +736,6 @@ export default function App() {
                   disabled={publicBusy}
                 >
                   <Globe2 size={17} />
-
                   {publicBusy
                     ? 'Checking…'
                     : 'Check public connection'}
@@ -868,20 +757,14 @@ export default function App() {
                     label="Observed public IP"
                     value={publicInfo.public_ip}
                   />
-
                   <DataLine
                     label="IP version"
                     value={publicInfo.ip_family}
                   />
-
                   <DataLine
                     label="Exit IP network"
-                    value={
-                      publicInfo.exit_network
-                      ?? 'Unknown'
-                    }
+                    value={publicInfo.exit_network ?? 'Unknown'}
                   />
-
                   <DataLine
                     label="Network ASN"
                     value={
@@ -890,22 +773,15 @@ export default function App() {
                         : 'Unknown'
                     }
                   />
-
                   <DataLine
                     label="Local IPv4"
-                    value={
-                      publicInfo.local_ipv4
-                      ?? 'Unknown'
-                    }
+                    value={publicInfo.local_ipv4 ?? 'Unknown'}
                   />
-
                   <DataLine
                     label="CGNAT / NAT clues"
                     value={publicInfo.nat_status}
                   />
-
                   <p>{publicInfo.nat_explanation}</p>
-
                   <p className="disclaimer">
                     {publicInfo.provider_explanation}
                   </p>
@@ -920,10 +796,9 @@ export default function App() {
             />
 
             <p className="disclaimer">
-              No hotspot identity is inferred from
-              SSID or Wi-Fi adapter alone. No router
-              login, port scans or location permissions
-              are required.
+              No hotspot identity is inferred from the SSID
+              or Wi-Fi adapter alone. No router login,
+              port scan or Windows location permission is required.
             </p>
           </section>
         )}
