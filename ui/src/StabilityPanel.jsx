@@ -1,11 +1,11 @@
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
-  Activity,
-  Play,
-  Square,
-  RefreshCw,
+  Activity, Play, Square, RefreshCw,
 } from 'lucide-react';
+import {
+  FeedbackButton, notify, beginTask,
+} from './feedback.jsx';
 
 const PALETTE = {
   ok: '#63e8cb',
@@ -21,7 +21,7 @@ const EMPTY = {
     mixed: 0,
     failed: 0,
   },
-  message: 'No saved connection checks yet.',
+  message: 'No connection watch has started.',
 };
 
 function Timeline({ samples }) {
@@ -46,14 +46,14 @@ function Timeline({ samples }) {
     <div
       style={{
         overflowX: 'auto',
-        margin: '16px 0',
+        margin: '18px 0',
       }}
     >
       <svg
         viewBox={`0 0 ${width} 115`}
         width="100%"
         role="img"
-        aria-label={`${samples.length} recent connection checks, oldest to newest`}
+        aria-label={`${samples.length} connection checks, oldest to newest`}
       >
         <line
           x1="0"
@@ -88,11 +88,11 @@ function Timeline({ samples }) {
             }
           >
             <title>
-              {`${new Date(sample.checked_at).toLocaleString()}: ${sample.state}; gateway echo ${
-                sample.gateway_reply === null
-                  ? 'not checked'
+              {`${new Date(sample.checked_at).toLocaleString()}: ${sample.state}; gateway ping: ${
+                sample.gateway_reply == null
+                  ? 'unknown'
                   : sample.gateway_reply
-                    ? 'replied'
+                    ? 'reply'
                     : 'no reply'
               }`}
             </title>
@@ -107,36 +107,90 @@ export default function StabilityPanel() {
   const [state, setState] = useState(EMPTY);
   const [duration, setDuration] = useState(10);
   const [pending, setPending] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+
+  const previousRunning = useRef(false);
+  const mounted = useRef(false);
 
   const desktop = Boolean(
     window.pywebview?.api?.get_stability_status
   );
 
-  async function refresh() {
-    if (
-      !window.pywebview?.api?.get_stability_status
-    ) {
+  async function readStatus({ silent = false } = {}) {
+    if (!window.pywebview?.api?.get_stability_status) {
+      if (!silent) {
+        notify(
+          'warning',
+          'History unavailable',
+          'Open NetDoctor in the Windows desktop app.'
+        );
+      }
       return;
     }
 
+    const finish = silent
+      ? null
+      : beginTask(
+          'Refreshing connection history…',
+          'Loading locally stored checks.'
+        );
+
+    if (!silent) setRefreshing(true);
+
     try {
-      setState(
-        await window.pywebview.api.get_stability_status()
-      );
+      const next =
+        await window.pywebview.api.get_stability_status();
+
+      setState(next);
+
+      if (!silent) {
+        setError('');
+
+        finish(
+          'success',
+          'History updated',
+          `${next.samples?.length ?? 0} recent checks available.`
+        );
+      }
+
+      if (
+        mounted.current &&
+        previousRunning.current &&
+        !next.running &&
+        next.message === 'Monitoring session completed.'
+      ) {
+        notify(
+          'success',
+          'Stability watch completed',
+          'The selected session has finished.'
+        );
+      }
+
+      previousRunning.current = Boolean(next.running);
     } catch {
       setError(
         'Could not read the saved connection history.'
       );
+
+      finish?.(
+        'error',
+        'History refresh failed',
+        'The local data could not be read.'
+      );
+    } finally {
+      if (!silent) setRefreshing(false);
     }
   }
 
   useEffect(() => {
     let active = true;
+    mounted.current = false;
 
-    const poll = async () => {
+    async function poll() {
       if (
-        !window.pywebview?.api?.get_stability_status
+        !window.pywebview?.api?.get_stability_status ||
+        !active
       ) {
         return;
       }
@@ -145,59 +199,91 @@ export default function StabilityPanel() {
         const next =
           await window.pywebview.api.get_stability_status();
 
-        if (active) {
-          setState(next);
-        }
-      } catch {
-        if (active) {
-          setError(
-            'Could not read the connection history.'
+        if (!active) return;
+
+        setState(next);
+
+        if (
+          mounted.current &&
+          previousRunning.current &&
+          !next.running &&
+          next.message === 'Monitoring session completed.'
+        ) {
+          notify(
+            'success',
+            'Stability watch completed',
+            'The selected session has finished.'
           );
         }
+
+        previousRunning.current = Boolean(next.running);
+        mounted.current = true;
+      } catch {
+        if (active) {
+          setError('Could not read the connection history.');
+        }
       }
-    };
+    }
 
     poll();
 
-    const handle = window.setInterval(
-      poll,
-      3000,
-    );
+    const timer = window.setInterval(poll, 3000);
 
     return () => {
       active = false;
-      window.clearInterval(handle);
+      window.clearInterval(timer);
     };
   }, []);
 
   async function start() {
     if (
+      pending ||
       !window.pywebview?.api?.start_stability_watch
-      || pending
     ) {
       return;
     }
 
-    setError('');
+    const finish = beginTask(
+      'Starting stability watch…',
+      `Requested ${duration}-minute session.`
+    );
+
     setPending(true);
+    setError('');
 
     try {
-      const response =
+      const result =
         await window.pywebview.api.start_stability_watch(
           duration
         );
 
-      if (!response?.ok) {
-        setError(
-          response?.message
-          || 'Could not start monitoring.'
+      if (result?.ok) {
+        finish(
+          'success',
+          'Stability watch started',
+          `Checking public connectivity about every 10 seconds for ${duration} minutes.`
+        );
+
+        await readStatus({ silent: true });
+      } else {
+        const message =
+          result?.message || 'Could not start monitoring.';
+
+        setError(message);
+
+        finish(
+          'warning',
+          'Monitoring not started',
+          message
         );
       }
-
-      await refresh();
     } catch {
-      setError(
-        'Could not start monitoring.'
+      setError('Could not start monitoring.');
+
+      finish(
+        'error',
+        'Start failed',
+        'The monitoring process did not start.'
       );
     } finally {
       setPending(false);
@@ -206,29 +292,52 @@ export default function StabilityPanel() {
 
   async function stop() {
     if (
+      pending ||
       !window.pywebview?.api?.stop_stability_watch
-      || pending
     ) {
       return;
     }
 
+    const finish = beginTask(
+      'Requesting monitor stop…',
+      'Waiting for the current check to finish.'
+    );
+
     setPending(true);
 
     try {
-      const response =
+      const result =
         await window.pywebview.api.stop_stability_watch();
 
-      if (!response?.ok) {
-        setError(
-          response?.message
-          || 'Could not stop monitoring.'
+      if (result?.ok) {
+        finish(
+          'success',
+          'Stop requested',
+          'The watch will stop after the current check.'
+        );
+
+        await readStatus({ silent: true });
+      } else {
+        const message =
+          result?.message || 'Could not stop monitoring.';
+
+        setError(message);
+
+        finish(
+          'error',
+          'Stop request failed',
+          message
         );
       }
-
-      await refresh();
     } catch {
       setError(
         'Could not stop monitoring normally.'
+      );
+
+      finish(
+        'error',
+        'Stop request failed',
+        'The monitor may still be running; refresh the status.'
       );
     } finally {
       setPending(false);
@@ -251,8 +360,8 @@ export default function StabilityPanel() {
 
       <p>
         Watch for intermittent connection trouble.
-        Checks run every 10 seconds, without speed-test
-        downloads or changing network settings.
+        Checks run every 10 seconds without speed-test
+        downloads or network-setting changes.
       </p>
 
       <div
@@ -278,9 +387,17 @@ export default function StabilityPanel() {
           id="watch-duration"
           value={duration}
           disabled={state.running || pending}
-          onChange={event => setDuration(
-            Number(event.target.value)
-          )}
+          onChange={event => {
+            const value = Number(event.target.value);
+
+            setDuration(value);
+
+            notify(
+              'info',
+              'Session length selected',
+              `${value} minutes. Monitoring has not started.`
+            );
+          }}
           style={{
             padding: 11,
             color: '#eaf1ff',
@@ -295,50 +412,56 @@ export default function StabilityPanel() {
         </select>
 
         {state.running ? (
-          <button
+          <FeedbackButton
             className="primary"
-            disabled={pending}
+            disabled={!desktop || refreshing}
+            busy={pending}
             onClick={stop}
           >
             <Square size={16} />
             Stop monitoring
-          </button>
+          </FeedbackButton>
         ) : (
-          <button
+          <FeedbackButton
             className="primary"
-            disabled={!desktop || pending}
+            disabled={!desktop || refreshing}
+            busy={pending}
             onClick={start}
           >
             <Play size={16} />
             Start monitoring
-          </button>
+          </FeedbackButton>
         )}
 
-        <button
+        <FeedbackButton
           className="text-link"
-          onClick={refresh}
           disabled={!desktop || pending}
+          busy={refreshing}
+          onClick={() => readStatus()}
         >
           <RefreshCw size={16} />
           Refresh
-        </button>
+        </FeedbackButton>
       </div>
 
       <p
         role="status"
+        className={state.running ? 'nd-running' : ''}
         style={{
           color: state.running
             ? '#70ead2'
             : '#aebfd5',
         }}
       >
-        <Activity
-          size={15}
-          style={{
-            verticalAlign: 'middle',
-            marginRight: 8,
-          }}
-        />
+        {!state.running && (
+          <Activity
+            size={15}
+            style={{
+              verticalAlign: 'middle',
+              marginRight: 8,
+            }}
+          />
+        )}
 
         {desktop
           ? state.message
@@ -359,21 +482,9 @@ export default function StabilityPanel() {
         style={{ marginTop: 23 }}
       >
         {[
-          [
-            'Both checks connected',
-            counts.ok,
-            PALETTE.ok,
-          ],
-          [
-            'One connected',
-            counts.mixed,
-            PALETTE.mixed,
-          ],
-          [
-            'Neither connected',
-            counts.failed,
-            PALETTE.failed,
-          ],
+          ['Both checks connected', counts.ok, PALETTE.ok],
+          ['One connected', counts.mixed, PALETTE.mixed],
+          ['Neither connected', counts.failed, PALETTE.failed],
         ].map(([label, count, color]) => (
           <article
             className="mini-metric"
@@ -440,18 +551,15 @@ export default function StabilityPanel() {
           Showing the latest {samples.length} saved checks
           (up to 120). Older results are retained locally
           up to 1,000 checks. A failed TCP connection is
-          not proof of a general internet outage.
-          Gateway ping replies are optional and do not
-          prove Wi-Fi quality. Repeating failures may
-          warrant further diagnosis.
+          not proof of a general outage; gateway ping is optional.
         </p>
       )}
 
       <p className="disclaimer">
         Uses short TCP connections to two public destinations.
         No continuous monitoring after the selected session
-        expires or after the app exits. No account, location
-        service, or remote storage is required.
+        or app closes. No account, location service or remote
+        storage is required.
       </p>
     </section>
   );

@@ -3,15 +3,41 @@ import { useEffect, useState } from 'react';
 import {
   Activity, Gamepad2, Film, Video, Globe2, RefreshCw, Gauge, Zap,
 } from 'lucide-react';
+import {
+  FeedbackButton,
+  notify,
+  beginTask,
+} from './feedback.jsx';
 
-const icons = { gaming: Gamepad2, streaming: Film, calls: Video, browsing: Globe2 };
-const colors = { positive: '#63e8cb', caution: '#f1c67a', neutral: '#9bb7d5' };
+const icons = {
+  gaming: Gamepad2,
+  streaming: Film,
+  calls: Video,
+  browsing: Globe2,
+};
+
+const colors = {
+  positive: '#63e8cb',
+  caution: '#f1c67a',
+  neutral: '#9bb7d5',
+};
 
 function MilliCard({ label, value, color }) {
   return (
-    <div className="mini-metric" style={{ display: 'block', minHeight: 105 }}>
+    <div
+      className="mini-metric"
+      style={{ display: 'block', minHeight: 105 }}
+    >
       <span>{label}</span>
-      <strong style={{ display: 'block', marginTop: 13, fontSize: 25, color }}>
+
+      <strong
+        style={{
+          display: 'block',
+          marginTop: 13,
+          fontSize: 25,
+          color,
+        }}
+      >
         {typeof value === 'number' && Number.isFinite(value)
           ? `${value > 0 && label === 'CHANGE' ? '+' : ''}${value.toFixed(0)} ms`
           : '—'}
@@ -28,115 +54,276 @@ export default function ActivityPanel({ reading }) {
   const [loadError, setLoadError] = useState('');
   const [loadResult, setLoadResult] = useState(null);
 
-  async function refresh() {
+  async function refresh({ silent = false } = {}) {
+    if (busy && !silent) return;
+
+    const finish = silent
+      ? null
+      : beginTask(
+          'Refreshing activity insights…',
+          'Checking your existing speed data.'
+        );
+
     if (!window.pywebview?.api?.get_activity_outlook) {
-      setError('Open the Windows NetDoctor app to see activity insights.');
+      setError(
+        'Open the Windows NetDoctor app to see activity insights.'
+      );
+
+      finish?.(
+        'warning',
+        'Activity insights unavailable',
+        'Open the Windows desktop app.'
+      );
       return;
     }
+
     setBusy(true);
     setError('');
+
     try {
-      setResult(await window.pywebview.api.get_activity_outlook(reading ?? null));
+      const next =
+        await window.pywebview.api.get_activity_outlook(
+          reading ?? null
+        );
+
+      setResult(next);
+
+      finish?.(
+        'success',
+        'Activity insights refreshed',
+        'Using your existing measurements; no new speed test started.'
+      );
     } catch {
-      setError('The saved measurements could not be analyzed right now.');
+      setError(
+        'The saved measurements could not be analyzed right now.'
+      );
+
+      finish?.(
+        'error',
+        'Activity insights failed',
+        'The saved measurements could not be analyzed.'
+      );
     } finally {
       setBusy(false);
     }
   }
 
   useEffect(() => {
-    refresh();
-  }, [reading?.tested_at, reading?.download_mbps, reading?.upload_mbps]);
+    refresh({ silent: true });
+  }, [
+    reading?.tested_at,
+    reading?.download_mbps,
+    reading?.upload_mbps,
+  ]);
 
   async function testLoadedLatency() {
     if (loadBusy) return;
+
     if (!window.pywebview?.api?.check_loaded_latency) {
-      setLoadError('This test is available in the Windows desktop app only.');
+      setLoadError(
+        'This test is available in the Windows desktop app only.'
+      );
+
+      notify(
+        'warning',
+        'Test unavailable',
+        'Open NetDoctor in the Windows desktop app.'
+      );
       return;
     }
+
     if (!window.confirm(
       'NetDoctor will download up to 4 MiB (about 4.2 MB) from a test ' +
       'provider and send small ping requests to compare response times ' +
       'before and during the download. This may use metered mobile data. ' +
       'No settings will be changed. Continue?'
-    )) return;
+    )) {
+      notify(
+        'info',
+        'Response check cancelled',
+        'No download was started.'
+      );
+      return;
+    }
+
+    const finish = beginTask(
+      'Measuring responsiveness…',
+      'Downloading up to 4 MiB and checking ping overlap.'
+    );
 
     setLoadBusy(true);
     setLoadError('');
     setLoadResult(null);
+
     try {
-      const answer = await window.pywebview.api.check_loaded_latency();
+      const answer =
+        await window.pywebview.api.check_loaded_latency();
+
       if (answer?.ok && answer.result) {
         setLoadResult(answer.result);
+
+        finish(
+          answer.result.status === 'inconclusive'
+            ? 'warning'
+            : 'success',
+          'Response check completed',
+          answer.result.headline
+        );
       } else {
-        setLoadError(answer?.error || 'The loaded-latency check could not finish.');
+        setLoadError(
+          answer?.error ||
+          'The loaded-latency check could not finish.'
+        );
+
+        finish(
+          'warning',
+          'Response check incomplete',
+          answer?.error || 'No reliable result returned.'
+        );
       }
     } catch {
-      setLoadError('The loaded-latency check could not finish.');
+      setLoadError(
+        'The loaded-latency check could not finish.'
+      );
+
+      finish(
+        'error',
+        'Response check failed',
+        'Please retry later.'
+      );
     } finally {
       setLoadBusy(false);
     }
   }
 
   return (
-    <section className="panel details-panel" style={{ maxWidth: 1060 }}>
-      <p className="eyebrow">YOUR MEASURED CONNECTION</p>
-      <div className="panel-heading" style={{ alignItems: 'flex-start' }}>
+    <section
+      className="panel details-panel"
+      style={{ maxWidth: 1060 }}
+    >
+      <p className="eyebrow">
+        YOUR MEASURED CONNECTION
+      </p>
+
+      <div
+        className="panel-heading"
+        style={{ alignItems: 'flex-start' }}
+      >
         <div>
           <h2>What can this connection support?</h2>
           <p>
-            Bandwidth references and latency clues from your last speed test,
-            not a fabricated quality score.
+            Bandwidth references and latency clues from your last
+            speed test, not a fabricated quality score.
           </p>
         </div>
-        <button className="text-link" onClick={refresh} disabled={busy}>
+
+        <FeedbackButton
+          className="text-link"
+          onClick={() => refresh()}
+          busy={busy}
+        >
           <RefreshCw size={16} /> Refresh
-        </button>
+        </FeedbackButton>
       </div>
 
-      {error && <p className="inline-warning" role="alert">{error}</p>}
-      {busy && <p role="status">Reading your saved measurements…</p>}
+      {error && (
+        <p className="inline-warning" role="alert">
+          {error}
+        </p>
+      )}
+
+      {busy && (
+        <p role="status">
+          Reading your saved measurements…
+        </p>
+      )}
+
       {result && (
         <>
-          <div className="diagnosis-block" style={{
-            borderLeft: `4px solid ${result.stale ? '#f1c67a' : '#63e8cb'}`,
-          }}>
+          <div
+            className="diagnosis-block"
+            style={{
+              borderLeft: `4px solid ${
+                result.stale ? '#f1c67a' : '#63e8cb'
+              }`,
+            }}
+          >
             <strong>
-              {result.stale ? 'Historical or incomplete speed reading' : 'Based on your last speed test'}
+              {result.stale
+                ? 'Historical or incomplete speed reading'
+                : 'Based on your last speed test'}
             </strong>
+
             <p>{result.note}</p>
+
             {result.tested_at && (
               <p style={{ fontSize: 12 }}>
-                Measured: {new Date(result.tested_at).toLocaleString()}
+                Measured: {
+                  new Date(result.tested_at).toLocaleString()
+                }
               </p>
             )}
           </div>
 
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
-            gap: 15,
-            margin: '23px 0',
-          }}>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns:
+                'repeat(auto-fit, minmax(250px, 1fr))',
+              gap: 15,
+              margin: '23px 0',
+            }}
+          >
             {result.activities.map(item => {
               const Icon = icons[item.key] || Activity;
-              const color = result.stale ? colors.neutral : colors[item.tone];
+              const color = result.stale
+                ? colors.neutral
+                : colors[item.tone];
+
               return (
-                <article key={item.key} className="panel" style={{
-                  background: '#172842', borderColor: '#2a4061', padding: 20,
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 15 }}>
+                <article
+                  key={item.key}
+                  className="panel"
+                  style={{
+                    background: '#172842',
+                    borderColor: '#2a4061',
+                    padding: 20,
+                  }}
+                >
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10,
+                      marginBottom: 15,
+                    }}
+                  >
                     <Icon color={color} size={21} />
                     <strong>{item.title}</strong>
                   </div>
-                  <div style={{ color, fontWeight: 800, fontSize: 17 }}>
+
+                  <div
+                    style={{
+                      color,
+                      fontWeight: 800,
+                      fontSize: 17,
+                    }}
+                  >
                     {item.status}
                   </div>
+
                   {result.stale && (
-                    <p style={{ color: '#f1c67a', fontSize: 12 }}>
-                      From an old or incomplete measurement — not current performance.
+                    <p
+                      style={{
+                        color: '#f1c67a',
+                        fontSize: 12,
+                      }}
+                    >
+                      From an old or incomplete measurement —
+                      not current performance.
                     </p>
                   )}
+
                   <p>{item.detail}</p>
                 </article>
               );
@@ -144,67 +331,153 @@ export default function ActivityPanel({ reading }) {
           </div>
 
           <div className="diagnosis-block">
-            <strong>What the stability watch observed</strong>
-            <p style={{ color: '#eaf1ff' }}>{result.stability.status}</p>
+            <strong>
+              What the stability watch observed
+            </strong>
+
+            <p style={{ color: '#eaf1ff' }}>
+              {result.stability.status}
+            </p>
+
             <p>{result.stability.detail}</p>
           </div>
         </>
       )}
 
-      <div className="diagnosis-block" style={{ marginTop: 24 }}>
-        <p className="eyebrow">OPTIONAL INTERACTIVE-RESPONSE CHECK</p>
-        <h2 style={{ fontSize: 23 }}>Does your connection lag during downloads?</h2>
+      <div
+        className="diagnosis-block"
+        style={{ marginTop: 24 }}
+      >
+        <p className="eyebrow">
+          OPTIONAL INTERACTIVE-RESPONSE CHECK
+        </p>
+
+        <h2 style={{ fontSize: 23 }}>
+          Does your connection lag during downloads?
+        </h2>
+
         <p>
-          A separate small download can reveal whether ping response time rises
-          while the connection is busy. This is especially relevant to
-          gaming and video calls, but it does not test those services directly.
+          A separate small download can reveal whether ping
+          response time rises while the connection is busy.
+          This is especially relevant to gaming and video calls,
+          but it does not test those services directly.
         </p>
-        <button className="primary" disabled={loadBusy} onClick={testLoadedLatency}>
+
+        <FeedbackButton
+          className="primary"
+          busy={loadBusy}
+          onClick={testLoadedLatency}
+        >
           <Zap size={17} />
-          {loadBusy ? 'Checking responsiveness…' : 'Check response under load'}
-        </button>
+          {loadBusy
+            ? 'Checking responsiveness…'
+            : 'Check response under load'}
+        </FeedbackButton>
+
         <p className="disclaimer">
-          Only runs after confirmation. Up to 4 MiB (about 4.2 MB) downloaded,
-          plus small requests. No upload stress test and no automatic repeat.
+          Only runs after confirmation. Up to 4 MiB
+          (about 4.2 MB) downloaded, plus small requests.
+          No upload stress test and no automatic repeat.
         </p>
-        {loadError && <p className="inline-warning" role="alert">{loadError}</p>}
-        {loadBusy && <p role="status">Comparing idle and during-download responses…</p>}
+
+        {loadError && (
+          <p
+            className="inline-warning"
+            role="alert"
+          >
+            {loadError}
+          </p>
+        )}
+
+        {loadBusy && (
+          <p role="status">
+            Comparing idle and during-download responses…
+          </p>
+        )}
 
         {loadResult && (
-          <div aria-live="polite" style={{ marginTop: 23 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <Gauge size={22} color={colors[loadResult.tone] || colors.neutral} />
-              <strong style={{ fontSize: 19 }}>{loadResult.headline}</strong>
+          <div
+            aria-live="polite"
+            style={{ marginTop: 23 }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+              }}
+            >
+              <Gauge
+                size={22}
+                color={
+                  colors[loadResult.tone] || colors.neutral
+                }
+              />
+
+              <strong style={{ fontSize: 19 }}>
+                {loadResult.headline}
+              </strong>
             </div>
+
             <p>{loadResult.explanation}</p>
-            <div className="metric-row" style={{ marginTop: 18 }}>
-              <MilliCard label="IDLE PING" value={loadResult.idle_ms} color="#eaf1ff" />
-              <MilliCard label="DURING DOWNLOAD" value={loadResult.during_download_ms} color="#eaf1ff" />
-              <MilliCard label="CHANGE" value={loadResult.change_ms}
-                color={colors[loadResult.tone] || colors.neutral} />
+
+            <div
+              className="metric-row"
+              style={{ marginTop: 18 }}
+            >
+              <MilliCard
+                label="IDLE PING"
+                value={loadResult.idle_ms}
+                color="#eaf1ff"
+              />
+
+              <MilliCard
+                label="DURING DOWNLOAD"
+                value={loadResult.during_download_ms}
+                color="#eaf1ff"
+              />
+
+              <MilliCard
+                label="CHANGE"
+                value={loadResult.change_ms}
+                color={
+                  colors[loadResult.tone] || colors.neutral
+                }
+              />
             </div>
+
             <div className="diagnosis-block action">
               <strong>What to try next</strong>
               <p>{loadResult.next_step}</p>
             </div>
+
             <p className="disclaimer">
-              Checked {new Date(loadResult.tested_at).toLocaleString()} ·
-              {' '}{loadResult.received_mib} MiB downloaded ·
-              {' '}{loadResult.loaded_replies} replies overlapped the transfer.
-              These results are from this run, not a permanent live reading.
+              Checked {
+                new Date(loadResult.tested_at).toLocaleString()
+              } ·{' '}
+              {loadResult.received_mib} MiB downloaded ·{' '}
+              {loadResult.loaded_replies} replies overlapped
+              the transfer. These results are from this run,
+              not a permanent live reading.
             </p>
-            <p className="disclaimer">{loadResult.limitation}</p>
+
+            <p className="disclaimer">
+              {loadResult.limitation}
+            </p>
           </div>
         )}
       </div>
 
       <p className="disclaimer">
-        Opening Activities doesn't start any measurement. Existing speed and
-        stability history may describe a different time or network. Actual
-        game servers, streaming services, websites and calls were not tested.
+        Opening Activities doesn't start any measurement.
+        Existing speed and stability history may describe
+        a different time or network. Actual game servers,
+        streaming services, websites and calls were not tested.
       </p>
+
       <p className="disclaimer">
-        Bandwidth references: Netflix streaming and Zoom HD video guidance.
+        Bandwidth references: Netflix streaming
+        and Zoom HD video guidance.
       </p>
     </section>
   );

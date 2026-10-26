@@ -1,5 +1,5 @@
 
-"""Local React bridge for NetDoctor's read-only, user-initiated diagnostics."""
+"""Local NetDoctor React bridge. Tests, downloads and monitoring require user action."""
 
 import json
 import math
@@ -12,6 +12,7 @@ from typing import Any, Callable
 
 from netdoctor.activity_quality import evaluate_activities
 from netdoctor.desktop_support import explain
+from netdoctor.diagnosis_insights import analyze_diagnosis
 from netdoctor.doctor import run_doctor
 from netdoctor.icmp import ProbeError
 from netdoctor.load_insights import summarize_loaded
@@ -42,38 +43,35 @@ def _value(raw: Any, *, maximum: float) -> float | None:
 
 
 def _wifi_adapter_fallback(snapshot, network: dict) -> None:
-    """Use normal adapter metadata without bypassing Windows location settings."""
+    """Show adapter metadata when Windows restricts WLAN signal/SSID access."""
     wifi = network.get("wifi")
     if not isinstance(wifi, dict):
         return
     candidates = [
-        adapter for adapter in snapshot.adapters
-        if adapter.is_up and re.search(
-            r"wi[ -]?fi|wireless|wlan|802\.11",
-            f"{adapter.name} {adapter.description}", re.I,
+        a for a in snapshot.adapters
+        if a.is_up and re.search(
+            r"wi[ -]?fi|wireless|wlan|802\.11", f"{a.name} {a.description}", re.I
         )
     ]
     route = snapshot.preferred_route("IPv4") or snapshot.preferred_route("IPv6")
-    selected = next(
-        (adapter for adapter in candidates
-         if route and adapter.index == route.interface_index), None,
-    )
-    if selected is None and len(candidates) == 1:
-        selected = candidates[0]
-    if selected is None:
+    chosen = next((a for a in candidates if route and a.index == route.interface_index), None)
+    if chosen is None and len(candidates) == 1:
+        chosen = candidates[0]
+    if chosen is None:
         return
-
-    wifi["adapter_name"] = selected.name
-    wifi["adapter_description"] = selected.description
-    wifi["adapter_link_speed"] = selected.link_speed or None
+    wifi.update({
+        "adapter_name": chosen.name,
+        "adapter_description": chosen.description,
+        "adapter_link_speed": chosen.link_speed or None,
+    })
     if wifi.get("status") != "Connected":
         wifi.update({
             "status": "Connected (details unavailable)",
             "signal_percent": None,
             "signal_label": "Unavailable",
             "detail": (
-                "Windows reports an active Wi-Fi adapter, but detailed signal "
-                "and network-name information was not available. Windows location "
+                "Windows reports an active Wi-Fi adapter, but detailed signal and "
+                "network-name information was not available. Windows location "
                 "privacy restrictions are one possible reason. NetDoctor does not "
                 "bypass them. Adapter link speed is not internet download speed."
             ),
@@ -81,14 +79,11 @@ def _wifi_adapter_fallback(snapshot, network: dict) -> None:
 
 
 class DashboardAPI:
-    """Desktop-only API. No monitoring, public lookup or download on opening."""
+    """Read-only bridge with opt-in probes and local, bounded history."""
 
     def __init__(
-        self,
-        *,
-        collector: Callable = collect_snapshot,
-        diagnose: Callable = run_doctor,
-        presenter: Callable = explain,
+        self, *, collector: Callable = collect_snapshot,
+        diagnose: Callable = run_doctor, presenter: Callable = explain,
         intelligence: Callable = collect_intelligence,
         public_lookup: Callable = inspect_public_network,
         monitor: StabilityMonitor | None = None,
@@ -102,10 +97,10 @@ class DashboardAPI:
         self._public_lookup = public_lookup
         self._loaded_test = loaded_test
         self._load_lock = threading.Lock()
+        self._last_loaded = None
         self._data_dir = data_dir or _data_dir()
-        self._monitor = monitor or StabilityMonitor(
-            StabilityHistory(self._data_dir / "stability.sqlite3"),
-            collector=collector,
+        self._monitor = monitor if monitor is not None else StabilityMonitor(
+            StabilityHistory(self._data_dir / "stability.sqlite3"), collector=collector
         )
 
     @staticmethod
@@ -116,14 +111,10 @@ class DashboardAPI:
             "explanation": "NetDoctor could not finish the short network check.",
             "observation": "No reliable conclusion was collected.",
             "next_step": "Check your Windows connection and try again.",
-            "interface": "Not determined",
-            "gateway": "Not determined",
-            "vpn": "Not checked",
-            "proxy": "Not checked",
-            "hotspot": "Not determined",
-            "isp": "Not checked",
-            "cgnat": "Not checked",
-            "network": None,
+            "interface": "Not determined", "gateway": "Not determined",
+            "vpn": "Not checked", "proxy": "Not checked",
+            "hotspot": "Not determined", "isp": "Not checked",
+            "cgnat": "Not checked", "network": None,
         }
 
     def get_overview(self) -> dict:
@@ -135,11 +126,9 @@ class DashboardAPI:
             return self._empty_overview()
         result = {
             **self._empty_overview(),
-            "status": report.status,
-            "headline": guide.headline,
+            "status": report.status, "headline": guide.headline,
             "explanation": guide.explanation,
-            "observation": guide.observation,
-            "next_step": guide.next_step,
+            "observation": guide.observation, "next_step": guide.next_step,
             "interface": report.interface or "Not determined",
             "gateway": report.gateway or "Not determined",
         }
@@ -147,11 +136,9 @@ class DashboardAPI:
             detail = self._intelligence(snapshot).to_dict()
             _wifi_adapter_fallback(snapshot, detail)
             result.update({
-                "network": detail,
-                "vpn": detail["vpn"]["status"],
+                "network": detail, "vpn": detail["vpn"]["status"],
                 "proxy": detail["proxy"]["status"],
-                "hotspot": detail["hotspot"],
-                "isp": detail["isp"],
+                "hotspot": detail["hotspot"], "isp": detail["isp"],
                 "cgnat": detail["cgnat"],
             })
         except Exception:
@@ -161,24 +148,18 @@ class DashboardAPI:
     def check_public_connection(self, router_wan_ipv4: str = "") -> dict:
         try:
             if not isinstance(router_wan_ipv4, str):
-                raise ValueError(
-                    "Enter a numeric router WAN IPv4 address or leave it empty."
-                )
-            snapshot = self._collector()
+                raise ValueError("Enter a numeric router WAN IPv4 address or leave it empty.")
             report = self._public_lookup(
-                snapshot, router_wan_ipv4=router_wan_ipv4,
+                self._collector(), router_wan_ipv4=router_wan_ipv4
             )
             return {"ok": True, "report": report.to_dict()}
         except (ValueError, PublicLookupError) as exc:
             return {"ok": False, "error": str(exc)}
         except Exception:
-            return {
-                "ok": False,
-                "error": (
-                    "Public connection information is unavailable right now. "
-                    "No network settings were changed."
-                ),
-            }
+            return {"ok": False, "error": (
+                "Public connection information is unavailable right now. "
+                "No network settings were changed."
+            )}
 
     def start_stability_watch(self, minutes: int = 10) -> dict:
         try:
@@ -199,68 +180,64 @@ class DashboardAPI:
         try:
             return self._monitor.status()
         except Exception:
-            return {
-                "running": False,
-                "message": "Connection history is unavailable.",
-                "samples": [],
-                "counts": {"ok": 0, "mixed": 0, "failed": 0},
-            }
+            return {"running": False, "message": "Connection history is unavailable.",
+                    "samples": [], "counts": {"ok": 0, "mixed": 0, "failed": 0}}
 
     def get_activity_outlook(self, reading: dict | None = None) -> dict:
-        """Analyze existing data only. This method never starts a network check."""
         try:
-            measurement = (
-                self._validated(reading)
-                if reading is not None else self.load_previous_speed()
-            )
+            speed = self._validated(reading) if reading is not None else self.load_previous_speed()
         except (ValueError, TypeError, KeyError):
-            measurement = None
+            speed = None
         try:
             samples = self._monitor.status().get("samples", [])
         except Exception:
             samples = []
-        return evaluate_activities(measurement, samples=samples)
+        return evaluate_activities(speed, samples=samples)
 
     def check_loaded_latency(self) -> dict:
-        """Explicit 4 MiB download test; rejects concurrent invocations.
-
-        Calling this method may use metered data. UI confirmation precedes it.
-        The previous speed reading is not replaced by this smaller diagnostic.
-        """
+        """One user-confirmed 4 MiB transfer; never changes the speed-test cache."""
         if not self._load_lock.acquire(blocking=False):
-            return {
-                "ok": False,
-                "error": "A loaded-latency check is already in progress.",
-            }
+            return {"ok": False, "error": "A loaded-latency check is already in progress."}
         try:
             report = self._loaded_test(size_mib=4, timeout=10.0)
-            return {"ok": True, "result": summarize_loaded(report)}
+            result = summarize_loaded(report)
+            self._last_loaded = result
+            return {"ok": True, "result": result}
         except (LoadedError, ProbeError):
-            return {
-                "ok": False,
-                "error": (
-                    "The short download and response-time check could not finish. "
-                    "Ping restrictions or a download failure may be involved."
-                ),
-            }
+            return {"ok": False, "error": (
+                "The short download and response-time check could not finish. "
+                "Ping restrictions or a download failure may be involved."
+            )}
         except Exception:
-            return {
-                "ok": False,
-                "error": (
-                    "Loaded-latency measurement is unavailable right now. "
-                    "No network settings were changed."
-                ),
-            }
+            return {"ok": False, "error": (
+                "Loaded-latency measurement is unavailable right now. "
+                "No network settings were changed."
+            )}
         finally:
             self._load_lock.release()
 
+    def get_diagnosis_insights(self, overview: dict | None = None,
+                               reading: dict | None = None) -> dict:
+        """Correlate supplied quick-check result with cached measurements only.
+
+        This does not invoke discovery, doctor, throughput, DNS or any probe.
+        Stored history and the optional loaded test can be from other networks.
+        """
+        try:
+            speed = self._validated(reading) if reading is not None else self.load_previous_speed()
+        except (ValueError, TypeError, KeyError):
+            speed = None
+        try:
+            samples = self._monitor.status().get("samples", [])
+        except Exception:
+            samples = []
+        return analyze_diagnosis(
+            overview, reading=speed, samples=samples, loaded=self._last_loaded
+        )
+
     def load_previous_speed(self) -> dict | None:
         try:
-            raw = json.loads(
-                (self._data_dir / "last-speed.json").read_text(
-                    encoding="utf-8"
-                )
-            )
+            raw = json.loads((self._data_dir / "last-speed.json").read_text(encoding="utf-8"))
             return self._validated(raw)
         except (OSError, ValueError, TypeError, KeyError):
             return None
@@ -280,18 +257,10 @@ class DashboardAPI:
             raise ValueError("Test timestamp must include a timezone.")
         return {
             "tested_at": parsed.astimezone(timezone.utc).isoformat(),
-            "download_mbps": _value(
-                reading.get("download_mbps"), maximum=100000,
-            ),
-            "upload_mbps": _value(
-                reading.get("upload_mbps"), maximum=100000,
-            ),
-            "latency_ms": _value(
-                reading.get("latency_ms"), maximum=60000,
-            ),
-            "jitter_ms": _value(
-                reading.get("jitter_ms"), maximum=60000,
-            ),
+            "download_mbps": _value(reading.get("download_mbps"), maximum=100000),
+            "upload_mbps": _value(reading.get("upload_mbps"), maximum=100000),
+            "latency_ms": _value(reading.get("latency_ms"), maximum=60000),
+            "jitter_ms": _value(reading.get("jitter_ms"), maximum=60000),
         }
 
     def save_speed(self, reading: dict) -> dict:
@@ -300,9 +269,7 @@ class DashboardAPI:
         path = self._data_dir / "last-speed.json"
         temporary = self._data_dir / "last-speed.json.tmp"
         try:
-            temporary.write_text(
-                json.dumps(validated, indent=2), encoding="utf-8"
-            )
+            temporary.write_text(json.dumps(validated, indent=2), encoding="utf-8")
             temporary.replace(path)
         finally:
             temporary.unlink(missing_ok=True)
@@ -314,18 +281,13 @@ class DashboardAPI:
 
 def main() -> int:
     if not WEB_BUILD.is_file():
-        print(
-            "NetDoctor dashboard has not been built. "
-            "Run 'npm install' and 'npm run build' inside ui/ first."
-        )
+        print("NetDoctor dashboard has not been built. Run 'npm install' "
+              "and 'npm run build' inside ui/ first.")
         return 2
     try:
         import webview
     except ImportError:
-        print(
-            "Install the desktop requirements: "
-            "python -m pip install -e '.[desktop]'"
-        )
+        print("Install the desktop requirements: python -m pip install -e '.[desktop]'")
         return 2
     api = DashboardAPI()
     webview.create_window(
