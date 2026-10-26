@@ -9,10 +9,17 @@ from PyInstaller.utils.hooks import collect_all
 
 ROOT = Path(SPEC).resolve().parent.parent
 FRONTEND = ROOT / "ui" / "dist"
+ICON = ROOT / "assets" / "netdoctor.ico"
 
 if not (FRONTEND / "index.html").is_file():
     raise SystemExit(
         "Build the React dashboard first: cd ui; npm run build"
+    )
+
+if not ICON.is_file():
+    raise SystemExit(
+        "Missing assets/netdoctor.ico. "
+        "Save the NetDoctor Windows icon before building."
     )
 
 webview_datas, webview_binaries, webview_hidden = collect_all("webview")
@@ -55,6 +62,7 @@ exe = EXE(
     strip=False,
     upx=False,
     console=False,
+    icon=str(ICON),
 )
 
 coll = COLLECT(

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="NetDoctor network pulse shield icon">
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#152846"/><stop offset="0.56" stop-color="#0B1932"/><stop offset="1" stop-color="#081425"/>
+    </linearGradient>
+    <linearGradient id="stroke" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#37D5BD"/><stop offset="0.57" stop-color="#4DCBEF"/><stop offset="1" stop-color="#4D7EFF"/>
+    </linearGradient>
+    <linearGradient id="shieldfill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#173D58"/><stop offset="1" stop-color="#0C2647"/>
+    </linearGradient>
+  </defs>
+  <rect x="24" y="24" width="976" height="976" rx="225" fill="url(#background)"/>
+  <rect x="38" y="38" width="948" height="948" rx="214" fill="none" stroke="#25445D" stroke-width="4"/>
+  <path d="M512 156 C594 219 704 244 797 252 V458 C797 662 692 800 512 875 C332 800 227 662 227 458 V252 C320 244 430 219 512 156 Z" fill="url(#shieldfill)" stroke="url(#stroke)" stroke-width="43" stroke-linejoin="round"/>
+  <path d="M325 531 H404 L449 416 L501 644 L559 475 L591 531 H705" fill="none" stroke="url(#stroke)" stroke-width="54" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="325" cy="531" r="21" fill="#3BE0C2"/>
+  <circle cx="705" cy="531" r="21" fill="#5BA0FC"/>
+</svg>
