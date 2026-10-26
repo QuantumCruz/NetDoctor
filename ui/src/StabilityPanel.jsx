@@ -1,11 +1,6 @@
-
 import { useEffect, useRef, useState } from 'react';
-import {
-  Activity, Play, Square, RefreshCw,
-} from 'lucide-react';
-import {
-  FeedbackButton, notify, beginTask,
-} from './feedback.jsx';
+import { Activity, Play, Square, RefreshCw, Archive } from 'lucide-react';
+import { FeedbackButton, notify, beginTask } from './feedback.jsx';
 
 const PALETTE = {
   ok: '#63e8cb',
@@ -16,26 +11,24 @@ const PALETTE = {
 const EMPTY = {
   running: false,
   samples: [],
-  counts: {
-    ok: 0,
-    mixed: 0,
-    failed: 0,
-  },
+  counts: { ok: 0, mixed: 0, failed: 0 },
   message: 'No connection watch has started.',
+  history_scope: 'unverified',
+  history_notice: 'Previous history is not assigned to the current connection.',
+  other_network_count: 0,
 };
 
 function Timeline({ samples }) {
   if (!samples.length) {
     return (
-      <div
-        style={{
-          color: '#91a7c2',
-          padding: '42px 12px',
-          textAlign: 'center',
-        }}
-      >
-        Start monitoring to see a timeline of connection checks.
-      </div>
+      <p style={{
+        color: '#91a7c2',
+        padding: '28px 10px',
+        textAlign: 'center',
+      }}>
+        No checks recorded for this connection yet.
+        Start a watch to create a timeline.
+      </p>
     );
   }
 
@@ -43,17 +36,12 @@ function Timeline({ samples }) {
   const step = width / Math.max(120, samples.length);
 
   return (
-    <div
-      style={{
-        overflowX: 'auto',
-        margin: '18px 0',
-      }}
-    >
+    <div style={{ overflowX: 'auto', margin: '18px 0' }}>
       <svg
         viewBox={`0 0 ${width} 115`}
         width="100%"
         role="img"
-        aria-label={`${samples.length} connection checks, oldest to newest`}
+        aria-label={`${samples.length} current-connection checks, oldest to newest`}
       >
         <line
           x1="0"
@@ -63,35 +51,33 @@ function Timeline({ samples }) {
           stroke="#324861"
         />
 
-        {samples.map((sample, index) => (
+        {samples.map((item, index) => (
           <rect
-            key={`${sample.checked_at}-${index}`}
+            key={`${item.checked_at}-${index}`}
             x={index * step + 1}
             y={
-              sample.state === 'failed'
+              item.state === 'failed'
                 ? 29
-                : sample.state === 'mixed'
+                : item.state === 'mixed'
                   ? 44
                   : 12
             }
             width={Math.max(3, step - 2)}
             height={
-              sample.state === 'failed'
+              item.state === 'failed'
                 ? 71
-                : sample.state === 'mixed'
+                : item.state === 'mixed'
                   ? 56
                   : 88
             }
             rx="2"
-            fill={
-              PALETTE[sample.state] || '#7f95b2'
-            }
+            fill={PALETTE[item.state] || '#7f95b2'}
           >
             <title>
-              {`${new Date(sample.checked_at).toLocaleString()}: ${sample.state}; gateway ping: ${
-                sample.gateway_reply == null
+              {`${new Date(item.checked_at).toLocaleString()}: ${item.state}; gateway ping: ${
+                item.gateway_reply == null
                   ? 'unknown'
-                  : sample.gateway_reply
+                  : item.gateway_reply
                     ? 'reply'
                     : 'no reply'
               }`}
@@ -123,7 +109,7 @@ export default function StabilityPanel() {
         notify(
           'warning',
           'History unavailable',
-          'Open NetDoctor in the Windows desktop app.'
+          'Open the Windows desktop app.'
         );
       }
       return;
@@ -133,7 +119,7 @@ export default function StabilityPanel() {
       ? null
       : beginTask(
           'Refreshing connection history…',
-          'Loading locally stored checks.'
+          'Reading locally saved checks.'
         );
 
     if (!silent) setRefreshing(true);
@@ -143,31 +129,39 @@ export default function StabilityPanel() {
         await window.pywebview.api.get_stability_status();
 
       setState(next);
+      setError('');
 
       if (!silent) {
-        setError('');
-
         finish(
           'success',
           'History updated',
-          `${next.samples?.length ?? 0} recent checks available.`
+          `${next.samples?.length ?? 0} checks for this connection.`
         );
       }
 
       if (
         mounted.current &&
         previousRunning.current &&
-        !next.running &&
-        next.message === 'Monitoring session completed.'
+        !next.running
       ) {
-        notify(
-          'success',
-          'Stability watch completed',
-          'The selected session has finished.'
-        );
+        if (next.message === 'Monitoring session completed.') {
+          notify(
+            'success',
+            'Stability watch completed',
+            'The selected monitoring session finished.'
+          );
+        } else if (next.message?.includes('configuration changed')) {
+          notify(
+            'warning',
+            'Monitoring ended after network change',
+            'Results were not mixed across connections.'
+          );
+        }
       }
 
       previousRunning.current = Boolean(next.running);
+      mounted.current = true;
+
     } catch {
       setError(
         'Could not read the saved connection history.'
@@ -176,7 +170,7 @@ export default function StabilityPanel() {
       finish?.(
         'error',
         'History refresh failed',
-        'The local data could not be read.'
+        'Local connection history could not be read.'
       );
     } finally {
       if (!silent) setRefreshing(false);
@@ -206,21 +200,31 @@ export default function StabilityPanel() {
         if (
           mounted.current &&
           previousRunning.current &&
-          !next.running &&
-          next.message === 'Monitoring session completed.'
+          !next.running
         ) {
-          notify(
-            'success',
-            'Stability watch completed',
-            'The selected session has finished.'
-          );
+          if (next.message === 'Monitoring session completed.') {
+            notify(
+              'success',
+              'Stability watch completed',
+              'The selected session has finished.'
+            );
+          } else if (next.message?.includes('configuration changed')) {
+            notify(
+              'warning',
+              'Network configuration changed',
+              'The current watch was stopped automatically.'
+            );
+          }
         }
 
         previousRunning.current = Boolean(next.running);
         mounted.current = true;
+
       } catch {
         if (active) {
-          setError('Could not read the connection history.');
+          setError(
+            'Could not read the connection history.'
+          );
         }
       }
     }
@@ -245,46 +249,47 @@ export default function StabilityPanel() {
 
     const finish = beginTask(
       'Starting stability watch…',
-      `Requested ${duration}-minute session.`
+      `${duration}-minute session requested.`
     );
 
     setPending(true);
     setError('');
 
     try {
-      const result =
+      const answer =
         await window.pywebview.api.start_stability_watch(
           duration
         );
 
-      if (result?.ok) {
+      if (answer?.ok) {
         finish(
           'success',
           'Stability watch started',
-          `Checking public connectivity about every 10 seconds for ${duration} minutes.`
+          'Checking connectivity about every 10 seconds.'
         );
 
         await readStatus({ silent: true });
       } else {
-        const message =
-          result?.message || 'Could not start monitoring.';
-
-        setError(message);
+        setError(
+          answer?.message || 'Could not start monitoring.'
+        );
 
         finish(
           'warning',
           'Monitoring not started',
-          message
+          answer?.message || 'No session started.'
         );
       }
+
     } catch {
       setError('Could not start monitoring.');
 
       finish(
         'error',
         'Start failed',
-        'The monitoring process did not start.'
+        'The watch could not be started.'
       );
+
     } finally {
       setPending(false);
     }
@@ -300,35 +305,36 @@ export default function StabilityPanel() {
 
     const finish = beginTask(
       'Requesting monitor stop…',
-      'Waiting for the current check to finish.'
+      'Waiting for the active check to finish.'
     );
 
     setPending(true);
 
     try {
-      const result =
+      const answer =
         await window.pywebview.api.stop_stability_watch();
 
-      if (result?.ok) {
+      if (answer?.ok) {
         finish(
           'success',
           'Stop requested',
-          'The watch will stop after the current check.'
+          'The monitor will finish its current check.'
         );
 
         await readStatus({ silent: true });
-      } else {
-        const message =
-          result?.message || 'Could not stop monitoring.';
 
-        setError(message);
+      } else {
+        setError(
+          answer?.message || 'Could not stop monitoring.'
+        );
 
         finish(
           'error',
           'Stop request failed',
-          message
+          answer?.message || 'Try refreshing status.'
         );
       }
+
     } catch {
       setError(
         'Could not stop monitoring normally.'
@@ -337,8 +343,9 @@ export default function StabilityPanel() {
       finish(
         'error',
         'Stop request failed',
-        'The monitor may still be running; refresh the status.'
+        'The monitor may still be active.'
       );
+
     } finally {
       setPending(false);
     }
@@ -346,6 +353,7 @@ export default function StabilityPanel() {
 
   const samples = state.samples || [];
   const counts = state.counts || EMPTY.counts;
+  const scope = state.history_scope || 'unverified';
 
   return (
     <section
@@ -359,26 +367,21 @@ export default function StabilityPanel() {
       <h2>Connection stability</h2>
 
       <p>
-        Watch for intermittent connection trouble.
-        Checks run every 10 seconds without speed-test
-        downloads or network-setting changes.
+        Watch for intermittent trouble with small connection
+        checks every 10 seconds. No speed-test downloads or
+        network-setting changes.
       </p>
 
-      <div
-        style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          alignItems: 'center',
-          gap: 14,
-          margin: '22px 0',
-        }}
-      >
+      <div style={{
+        display: 'flex',
+        flexWrap: 'wrap',
+        alignItems: 'center',
+        gap: 14,
+        margin: '22px 0',
+      }}>
         <label
           htmlFor="watch-duration"
-          style={{
-            color: '#adbed4',
-            fontSize: 13,
-          }}
+          style={{ color: '#adbed4', fontSize: 13 }}
         >
           Session length
         </label>
@@ -388,14 +391,12 @@ export default function StabilityPanel() {
           value={duration}
           disabled={state.running || pending}
           onChange={event => {
-            const value = Number(event.target.value);
-
-            setDuration(value);
-
+            const n = Number(event.target.value);
+            setDuration(n);
             notify(
               'info',
-              'Session length selected',
-              `${value} minutes. Monitoring has not started.`
+              'Duration selected',
+              `${n} minutes. Monitoring has not started.`
             );
           }}
           style={{
@@ -418,8 +419,7 @@ export default function StabilityPanel() {
             busy={pending}
             onClick={stop}
           >
-            <Square size={16} />
-            Stop monitoring
+            <Square size={16} /> Stop monitoring
           </FeedbackButton>
         ) : (
           <FeedbackButton
@@ -428,8 +428,7 @@ export default function StabilityPanel() {
             busy={pending}
             onClick={start}
           >
-            <Play size={16} />
-            Start monitoring
+            <Play size={16} /> Start monitoring
           </FeedbackButton>
         )}
 
@@ -439,8 +438,7 @@ export default function StabilityPanel() {
           busy={refreshing}
           onClick={() => readStatus()}
         >
-          <RefreshCw size={16} />
-          Refresh
+          <RefreshCw size={16} /> Refresh
         </FeedbackButton>
       </div>
 
@@ -448,9 +446,7 @@ export default function StabilityPanel() {
         role="status"
         className={state.running ? 'nd-running' : ''}
         style={{
-          color: state.running
-            ? '#70ead2'
-            : '#aebfd5',
+          color: state.running ? '#70ead2' : '#aebfd5',
         }}
       >
         {!state.running && (
@@ -469,13 +465,41 @@ export default function StabilityPanel() {
       </p>
 
       {error && (
-        <p
-          className="inline-warning"
-          role="alert"
-        >
+        <p className="inline-warning" role="alert">
           {error}
         </p>
       )}
+
+      <div
+        className="diagnosis-block"
+        style={{ marginTop: 18 }}
+      >
+        <strong>
+          {scope === 'current'
+            ? 'Current connection history'
+            : scope === 'session'
+              ? 'This monitoring session only'
+              : 'Connection could not be identified'}
+        </strong>
+
+        <p>
+          {state.history_notice || EMPTY.history_notice}
+        </p>
+
+        {(state.other_network_count ?? 0) > 0 && (
+          <p style={{
+            display: 'flex',
+            gap: 8,
+            alignItems: 'center',
+          }}>
+            <Archive size={16} />
+
+            {state.other_network_count} earlier or
+            other-network checks are retained locally,
+            but excluded from these figures.
+          </p>
+        )}
+      </div>
 
       <div
         className="metric-row"
@@ -493,14 +517,12 @@ export default function StabilityPanel() {
           >
             <span>{label}</span>
 
-            <strong
-              style={{
-                display: 'block',
-                color,
-                marginTop: 14,
-                fontSize: 30,
-              }}
-            >
+            <strong style={{
+              display: 'block',
+              color,
+              marginTop: 14,
+              fontSize: 30,
+            }}>
               {count}
             </strong>
           </article>
@@ -508,32 +530,30 @@ export default function StabilityPanel() {
       </div>
 
       <div style={{ marginTop: 24 }}>
-        <strong>Recent history</strong>
+        <strong>
+          Recent checks on this connection
+        </strong>
 
         <Timeline samples={samples} />
 
-        <div
-          style={{
-            display: 'flex',
-            gap: 20,
-            flexWrap: 'wrap',
-            color: '#aebfd5',
-            fontSize: 12,
-          }}
-        >
+        <div style={{
+          display: 'flex',
+          gap: 20,
+          flexWrap: 'wrap',
+          color: '#aebfd5',
+          fontSize: 12,
+        }}>
           {Object.entries(PALETTE).map(
             ([name, color]) => (
               <span key={name}>
-                <span
-                  style={{
-                    display: 'inline-block',
-                    background: color,
-                    width: 9,
-                    height: 9,
-                    marginRight: 6,
-                    borderRadius: 2,
-                  }}
-                />
+                <span style={{
+                  display: 'inline-block',
+                  background: color,
+                  width: 9,
+                  height: 9,
+                  marginRight: 6,
+                  borderRadius: 2,
+                }} />
 
                 {name === 'ok'
                   ? 'Both connected'
@@ -546,20 +566,18 @@ export default function StabilityPanel() {
         </div>
       </div>
 
-      {samples.length > 0 && (
-        <p className="disclaimer">
-          Showing the latest {samples.length} saved checks
-          (up to 120). Older results are retained locally
-          up to 1,000 checks. A failed TCP connection is
-          not proof of a general outage; gateway ping is optional.
-        </p>
-      )}
+      <p className="disclaimer">
+        Up to 120 checks are displayed, with 1,000 stored
+        across all connections. Previous unassigned history
+        is preserved. A failed TCP check does not prove an
+        ISP outage. Route details may repeat on different
+        physical networks.
+      </p>
 
       <p className="disclaimer">
-        Uses short TCP connections to two public destinations.
-        No continuous monitoring after the selected session
-        or app closes. No account, location service or remote
-        storage is required.
+        Monitoring stops at the selected session limit,
+        on app exit, or after a detected route change.
+        No background downloads or subscriptions.
       </p>
     </section>
   );
