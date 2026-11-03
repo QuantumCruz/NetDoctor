@@ -9,7 +9,7 @@
 
 **A Windows network diagnostic application that turns technical measurements into understandable explanations.**
 
-[Releases](https://github.com/QuantumCruz/NetDoctor/releases) · [Report an issue](https://github.com/QuantumCruz/NetDoctor/issues) · [Source code](https://github.com/QuantumCruz/NetDoctor)
+[Download](https://github.com/QuantumCruz/NetDoctor/releases/latest) · [Report an issue](https://github.com/QuantumCruz/NetDoctor/issues) · [Source code](https://github.com/QuantumCruz/NetDoctor)
 
 **Windows 10/11 · Python · React · Local-first · No subscription**
 
@@ -21,121 +21,190 @@
 
 NetDoctor helps you investigate internet and local-network problems without needing to understand networking terminology.
 
-It checks different parts of your connection, explains what the measurements mean, and suggests useful next steps.
+It checks different parts of your connection, explains what the measurements mean, and suggests practical next steps.
 
-It is designed to distinguish three things:
+NetDoctor distinguishes between:
 
-- **Observed:** something NetDoctor actually measured.
-- **Possible:** an explanation consistent with the available evidence.
-- **Unknown:** something the available tests cannot reliably establish.
+- **Observed:** Something it actually measured.
+- **Possible:** An explanation consistent with the evidence.
+- **Unknown:** Something that cannot reliably be established.
 
-The goal is not to display a misleading "network health score" or blame an ISP without evidence.
+It does not invent a universal network-health score or blame an ISP without supporting evidence.
 
 ## Features
 
 ### Connection overview
 
-See basic internet reachability, your active network adapter, gateway information, and straightforward explanations of potential problems.
+Check basic internet connectivity, your active adapter, gateway information and available Windows network details.
 
-NetDoctor uses short connectivity checks to help establish whether selected destinations can be reached.
+NetDoctor explains the meaning of connection results rather than interpreting every failed probe as an internet outage.
 
 ### Internet speed
 
-Run an optional speed test for:
+Run an optional Cloudflare-powered speed test to measure:
 
 - Download speed
 - Upload speed
-- Network response time
-- Response-time variation
+- Response time (latency)
+- Response-time variation (jitter)
 
-Speed testing uses Cloudflare's speed-test service and transfers data only when you request a test.
+The test uses a deliberately limited transfer sequence to reduce data consumption.
 
-Results are saved locally.
+Speed measurements depend on the test destination, network routing and sampling method. In particular, latency to a Cloudflare test endpoint should not be interpreted as latency to every website, game server or application.
+
+The current dashboard does not independently verify the exact Cloudflare data-centre location used for a test.
+
+Completed speed readings are saved locally.
 
 ### Intelligent diagnosis
 
-NetDoctor combines available connection evidence to explain what it noticed, what it cannot confirm, and what you can try next.
+NetDoctor combines measured connection evidence to explain:
 
-An unavailable DNS or ping result does not automatically mean your internet connection is down.
+- What was observed
+- What might be causing a problem
+- What remains uncertain
+- What action is worth trying next
+
+An unavailable DNS, ping or external-service result does not automatically mean the internet connection is down.
 
 ### Activity guidance
 
-Get practical connection insights for:
+Get practical network-performance guidance for:
 
 - Gaming
 - Video calls
 - Streaming
 - General browsing
 
-These are guidance estimates based on available measurements, not guarantees that a particular game or application will perform perfectly.
+These assessments use available measurements and are not guarantees of application performance.
 
-An optional loaded-response test can help reveal increased delay during a short download.
+An optional loaded-response test compares connection latency before and during a short download.
 
 ### Connection stability
 
-Start a user-controlled monitoring session to look for intermittent connection problems.
+Run an optional monitoring session to investigate intermittent problems.
 
 - Five-, ten-, or thirty-minute sessions
-- Small connection checks approximately every ten seconds
-- Local history stored in SQLite
+- Short connectivity checks approximately every ten seconds
+- SQLite-based local history
 - Up to 1,000 stored observations
-- Network-specific history where route information is available
+- Network-context awareness where route information is available
 
-Monitoring stops when the session finishes or when the application closes. It can also stop when a network configuration change is detected.
+Monitoring runs only after being started and stops when its session ends or the application closes.
 
-### Network information
+### Cloud-region responsiveness
 
-Inspect available Windows network information, including:
+**New in v0.2.0**
 
-- Network adapters and connection routes
-- Configured DNS information
-- Wi-Fi details when Windows allows access
-- Possible VPN or virtual-network adapters
-- Proxy configuration clues
+Compare real TCP connection setup times to ten public cloud API endpoints:
 
-NetDoctor does not require Windows Location Services to perform its core diagnostics.
+**Amazon Web Services**
 
-Some Wi-Fi information, especially the SSID and signal percentage, may be unavailable when Windows restricts access.
+- Cape Town, South Africa
+- Bahrain
+- London, United Kingdom
+- Frankfurt, Germany
+- Northern Virginia, United States
+
+**Oracle Cloud**
+
+- Johannesburg, South Africa
+- Dubai, United Arab Emirates
+- London, United Kingdom
+- Frankfurt, Germany
+- Ashburn, United States
+
+Features include:
+
+- AWS-only, Oracle-only and combined comparisons
+- Three TCP attempts per endpoint
+- Median successful connection setup time
+- Observed response-time variation
+- Clear unavailable and partial-result states
+- Fastest eligible observed endpoint
+
+These measurements use TCP port 443 and do not require cloud accounts or rented servers.
+
+They are not ICMP ping measurements, guaranteed virtual-machine response times, cloud-provider speed rankings or game-server latency predictions.
+
+An unavailable endpoint does not prove that a cloud region is offline.
+
+### Windows network information
+
+Inspect available information about:
+
+- Network adapters and routing
+- DNS configuration
+- Wi-Fi connection details
+- Possible VPN and virtual-network adapters
+- Windows proxy settings
+- Network link speeds
+
+Windows Location Services are not required for NetDoctor's core features.
+
+Some Wi-Fi information, including the network name or signal percentage, may be restricted by Windows privacy settings.
 
 ### Public IP and NAT information
 
-Optionally check the public IP address seen by an external lookup service.
+Optionally check your public exit IP address and its reported network operator.
 
-NetDoctor can show the reported network operator and autonomous system number (ASN).
+If you provide the IPv4 WAN address shown in your router settings, NetDoctor can identify clues suggesting private WAN addressing, upstream NAT or possible CGNAT.
 
-If you enter your router's WAN IPv4 address, NetDoctor can provide additional evidence about private WAN addressing and upstream NAT.
+These results cannot always distinguish provider-level NAT from another router in the network.
 
-For example, a router WAN address in the private `10.0.0.0/8` range indicates that the router does not itself have a publicly routable WAN IPv4 address.
+NetDoctor never logs into your router or changes its configuration.
 
-This can suggest upstream NAT or carrier-grade NAT (CGNAT), but cannot always distinguish provider NAT from another local router.
+---
 
-NetDoctor does not log into your router or change port-forwarding settings.
+## Download and install
 
-## Download and run
+Download the latest Windows installer:
 
-Visit the [GitHub Releases page](https://github.com/QuantumCruz/NetDoctor/releases).
+https://github.com/QuantumCruz/NetDoctor/releases/latest
 
-Download the Windows portable ZIP from the latest beta or stable release.
+1. Download `NetDoctor-Setup-v0.2.0-x64.exe`.
+2. Run the installer.
+3. Follow the installation wizard.
+4. Open NetDoctor from the Start menu.
 
-1. Extract the ZIP completely.
-2. Open the extracted `NetDoctor` folder.
-3. Double-click `NetDoctor.exe`.
-4. Use the dashboard to check your connection.
+The installer includes the application's Python runtime and dashboard files.
 
-**Keep the entire extracted folder together.** The executable depends on bundled files in its accompanying `_internal` directory.
+You do not need to install Python, Node.js or the project's development dependencies.
 
-You do not need to install Python, Node.js, or the project's source dependencies.
+NetDoctor also includes an uninstaller.
 
 ### System requirements
 
 - 64-bit Windows 10 or Windows 11
 - Microsoft Edge WebView2 Runtime
-- Internet access for external connectivity tests and optional online lookups
-- No administrator privileges for ordinary operation
+- Internet access for external network measurements
+- No administrator privileges for normal operation
 
-WebView2 is available from [Microsoft](https://developer.microsoft.com/en-us/microsoft-edge/webview2/).
+Microsoft Edge WebView2 Runtime:
 
-Early unsigned builds may trigger a Windows SmartScreen reputation warning. Download releases only from the official repository and do not disable security software.
+https://developer.microsoft.com/en-us/microsoft-edge/webview2/
+
+### Windows security and unsigned releases
+
+NetDoctor is not currently code-signed.
+
+Windows may display security or reputation warnings for a downloaded executable. Download NetDoctor only from the official repository and inspect unexpected warnings rather than disabling Windows security features.
+
+Earlier portable ZIP builds could encounter Windows downloaded-file security restrictions affecting bundled .NET assemblies.
+
+The Windows installer replaces the ZIP distribution approach. It should still be tested on different Windows computers and download environments.
+
+### Startup troubleshooting
+
+If NetDoctor fails to initialize its Windows dashboard, it attempts to save technical details at:
+
+`%LOCALAPPDATA%\NetDoctor\logs\startup.log`
+
+This log can help identify missing components, Windows runtime issues or application startup failures.
+
+Do not publish diagnostic logs without checking them for personally identifying information.
+
+---
 
 ## Privacy and network usage
 
@@ -143,59 +212,70 @@ NetDoctor is local-first.
 
 - No user account is required.
 - No paid cloud infrastructure is required.
-- Local measurements and connection history remain on your computer.
-- Basic diagnostics make small external connection or DNS checks.
-- Speed tests transfer data only after you choose to run one.
-- Public IP lookup contacts IP.SB only after you request it.
-- Stability monitoring runs only for a session you explicitly start.
-- NetDoctor does not automatically change your router, DNS configuration, firewall, or Windows network settings.
+- Diagnostic history remains on your computer.
+- Speed tests and cloud-region comparisons run on demand.
+- Optional public IP lookups contact an external service.
+- Cloud-region comparisons make short TCP connections to external endpoints.
+- External services may observe your public exit IP address.
+- NetDoctor does not automatically change router, DNS, firewall or Windows network settings.
 
-Local data is normally stored in:
+Stored application data is normally located in:
 
 `%LOCALAPPDATA%\NetDoctor\`
 
-This includes the last saved speed reading and connection-stability history.
+This may include saved speed measurements, stability history and startup logs.
 
-Deleting this directory removes the associated local results.
+Uninstalling NetDoctor does not automatically delete this history.
 
-The public IP lookup sends a request to an external service. That service necessarily sees the IP address from which the request exits.
+## Understanding the measurements
 
-## Understanding the results
+### Download and upload
 
-**"Reachable"** means the tested connection checks succeeded. It does not prove that every website works or that the connection is fast.
+These values measure observed data-transfer performance during the selected test.
 
-**"Unverified"** means the particular tests could not establish connectivity. It is not a definitive diagnosis of an outage.
+Results can vary between providers, test locations, connection conditions and test durations.
 
-**"Possible VPN route"** means a VPN-style adapter may be involved in routing. It does not prove that all traffic uses a VPN.
+### Latency
 
-**"CGNAT not determined"** means there is insufficient information to establish whether provider-level address translation exists.
+Latency is the measured response time to a particular test destination.
 
-**"Upstream NAT indicated"** means an additional private-addressing or translation layer is suggested by the supplied router WAN address. The precise network arrangement may still be unknown.
+For example, a local Lagos test server may respond much faster than a service reached through an international route.
+
+There is no single latency value that accurately describes every internet destination.
+
+### Jitter
+
+Jitter describes variation in observed response times.
+
+The precise measurement method can differ between test providers.
+
+### Cloud-region TCP timing
+
+Cloud-region comparisons measure TCP connection establishment time to selected regional API endpoints.
+
+They are not interchangeable with ICMP ping, application response time, download throughput or guaranteed VM latency.
+
+### Unavailable results
+
+A failed or timed-out connection can reflect filtering, endpoint restrictions, routing problems or temporary network conditions.
+
+Failure to reach one destination does not automatically imply a complete connection outage.
+
+---
 
 ## Limitations
 
-NetDoctor is a diagnostic aid, not a replacement for ISP support, professional packet analysis, or application-specific testing.
+NetDoctor is a diagnostic aid, not a replacement for professional packet analysis or ISP troubleshooting.
 
-- Ping and TCP connections measure different properties.
-- Some routers and public endpoints ignore or deprioritize ICMP echo requests.
-- TCP connection setup time is not equivalent to application response time.
 - Short tests may miss intermittent problems.
+- ICMP and TCP tests measure different aspects of connectivity.
+- Some endpoints ignore or restrict probing.
+- Cloud API endpoints are not representative of every server in a cloud region.
 - Adapter link speed is not internet download speed.
-- Windows may restrict Wi-Fi association details.
-- Shared addresses and VPNs can complicate NAT and provider identification.
-- Matching network-route details do not prove that two physical networks are the same.
-
-NetDoctor reports these limitations rather than presenting uncertain conclusions as facts.
-
-## Planned improvements
-
-- Cloud-region responsiveness comparisons for AWS, Oracle Cloud, and other providers
-- User-selected game or application endpoint tests
-- Clearer CGNAT and port-forwarding explanations
-- Privacy-filtered diagnostic report sharing
-- Wider real-world testing across different Windows computers and networks
-
-Cloud-provider comparisons will measure connections to specified public endpoints. They will not be presented as guaranteed latency to every virtual machine, game server, or service in a region.
+- VPNs and proxies can change the observed public route.
+- Windows may restrict access to Wi-Fi details.
+- Saved readings may become outdated when the network changes.
+- Connection recommendations are based on available evidence rather than guarantees.
 
 ## Develop from source
 
@@ -203,7 +283,7 @@ Requirements:
 
 - Python 3.12 or later
 - Node.js compatible with the installed Vite version
-- Windows for native network discovery and desktop integration
+- Windows for native desktop integration
 
 Clone the repository:
 
@@ -212,7 +292,7 @@ git clone https://github.com/QuantumCruz/NetDoctor.git
 cd NetDoctor
 ```
 
-Create a Python environment and install development dependencies:
+Create a virtual environment:
 
 ```powershell
 py -3.12 -m venv .venv
@@ -220,7 +300,7 @@ py -3.12 -m venv .venv
 python -m pip install -e ".[dev,desktop]"
 ```
 
-Install and build the React frontend:
+Install and build the frontend:
 
 ```powershell
 cd ui
@@ -229,7 +309,7 @@ npm run build
 cd ..
 ```
 
-Launch the development desktop:
+Launch NetDoctor:
 
 ```powershell
 python -m netdoctor.webdesktop
@@ -241,57 +321,72 @@ Run automated tests:
 python -m pytest -q
 ```
 
-For command-line diagnostic options:
+Run cloud-region diagnostics from the command line:
 
 ```powershell
-netdoctor --help
+python -m netdoctor.cloud_regions
 ```
 
-### Build the Windows executable
+To test one cloud provider:
 
-Install the packaging tool:
+```powershell
+python -m netdoctor.cloud_regions --provider AWS
+python -m netdoctor.cloud_regions --provider Oracle
+```
+
+### Build the Windows application
+
+Install PyInstaller in the development environment:
 
 ```powershell
 python -m pip install "pyinstaller>=6,<7"
 ```
 
-Run the Windows build script:
+Build the bundled application:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\build_windows.ps1"
 ```
 
-The portable build will appear under:
+### Build the Windows installer
 
-`dist\NetDoctor\NetDoctor.exe`
+Install Inno Setup 6:
 
-The build script also runs Python tests, creates production React assets, and performs packaged-application smoke checks.
+https://jrsoftware.org/isdl.php
 
-A successful smoke check does not replace manual GUI testing.
+Run:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\build_installer.ps1"
+```
+
+The installer will appear under:
+
+`release\NetDoctor-Setup-v0.2.0-x64.exe`
+
+Automated build and smoke tests do not replace manual GUI, installation and fresh-download verification.
+
+---
 
 ## Reporting issues
 
-Use [GitHub Issues](https://github.com/QuantumCruz/NetDoctor/issues).
+Use GitHub Issues:
 
-Please include:
+https://github.com/QuantumCruz/NetDoctor/issues
 
-- Your Windows version
-- Your NetDoctor release version
-- Which action you performed
-- What you expected to happen
-- What actually happened
+Useful information includes your Windows version, NetDoctor version, the action that failed and the observed error.
 
-Do not publish your public IP, private network addresses, router credentials, or other sensitive information in a public issue.
+Never publish passwords, router credentials or unredacted private diagnostic information.
 
 ## Release status
 
-NetDoctor is in active development. Beta releases are intended for early testing and feedback.
+**v0.2.0** introduces cloud-region responsiveness comparisons and a Windows installer.
 
-The first Windows release uses a portable one-folder application. A traditional installer, signing, and automatic updates are not yet provided.
+Further planned improvements include additional cloud providers, application-specific endpoint tests, clearer NAT explanations and privacy-filtered diagnostic report sharing.
 
 ## Licensing
 
-A repository license has not yet been selected. Check the repository for a `LICENSE` file before assuming the source is licensed for reuse or redistribution.
+A repository license has not yet been selected. Check the repository for a `LICENSE` file before assuming permissions for redistribution or reuse.
 
 ---
 
