@@ -3,12 +3,13 @@ import { useEffect, useRef, useState } from 'react';
 import SpeedTest from '@cloudflare/speedtest';
 import {
   Activity, ArrowDownToLine, ArrowUpFromLine, CheckCircle2,
-  Gauge, Globe2, Laptop2, RefreshCw, Router, Shield,
+  Cloud, Gauge, Globe2, Laptop2, RefreshCw, Router, Shield,
   Signal, Wifi, Zap, Gamepad2,
 } from 'lucide-react';
 import StabilityPanel from './StabilityPanel.jsx';
 import ActivityPanel from './ActivityPanel.jsx';
 import DiagnosisPanel from './DiagnosisPanel.jsx';
+import CloudRegionsPanel from './CloudRegionsPanel.jsx';
 import {
   FeedbackHub,
   FeedbackButton,
@@ -510,6 +511,7 @@ export default function App() {
     ['diagnosis', 'Diagnosis', Activity],
     ['activities', 'Activities', Gamepad2],
     ['stability', 'Stability', Signal],
+    ['cloud', 'Cloud regions', Cloud],
     ['details', 'Network details', Laptop2],
   ];
 
@@ -561,6 +563,7 @@ export default function App() {
                 diagnosis: 'Network diagnosis',
                 activities: 'Activity insights',
                 stability: 'Stability & history',
+                cloud: 'Cloud region comparisons',
                 details: 'Connection details',
               })[tab]}
             </h1>
@@ -976,6 +979,14 @@ export default function App() {
               </p>
             </section>
           )}
+        </div>
+
+        <div
+          style={{
+            display: tab === 'cloud' ? 'block' : 'none',
+          }}
+        >
+          <CloudRegionsPanel />
         </div>
 
         <footer>

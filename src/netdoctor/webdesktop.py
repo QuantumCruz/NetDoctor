@@ -1,3 +1,4 @@
+
 """Local NetDoctor React bridge. Tests, downloads and monitoring require user action."""
 
 import json
@@ -10,6 +11,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from netdoctor.activity_quality import evaluate_activities
+from netdoctor.cloud_regions import compare_regions
 from netdoctor.desktop_support import explain
 from netdoctor.diagnosis_insights import analyze_diagnosis
 from netdoctor.doctor import run_doctor
@@ -116,6 +118,7 @@ class DashboardAPI:
         public_lookup: Callable = inspect_public_network,
         monitor: StabilityMonitor | None = None,
         loaded_test: Callable = measure_loaded,
+        cloud_comparer: Callable = compare_regions,
         data_dir: Path | None = None,
     ) -> None:
         self._collector = collector
@@ -124,7 +127,9 @@ class DashboardAPI:
         self._intelligence = intelligence
         self._public_lookup = public_lookup
         self._loaded_test = loaded_test
+        self._cloud_comparer = cloud_comparer
         self._load_lock = threading.Lock()
+        self._cloud_lock = threading.Lock()
         self._last_loaded = None
         self._data_dir = data_dir or _data_dir()
 
@@ -228,6 +233,61 @@ class DashboardAPI:
                     "No network settings were changed."
                 ),
             }
+
+    def check_cloud_regions(self, provider: str = "all") -> dict:
+        """Run preset regional probes only after an explicit UI request."""
+        if not isinstance(provider, str) or provider not in (
+            "all", "AWS", "Oracle"
+        ):
+            return {
+                "ok": False,
+                "error": "Select All providers, AWS, or Oracle Cloud.",
+            }
+
+        if not self._cloud_lock.acquire(blocking=False):
+            return {
+                "ok": False,
+                "error": "A cloud-region comparison is already running.",
+            }
+
+        try:
+            report = self._cloud_comparer(
+                provider=provider,
+                attempts=3,
+                timeout=1.5,
+            )
+
+            if (
+                not isinstance(report, dict)
+                or not isinstance(report.get("results"), list)
+            ):
+                return {
+                    "ok": False,
+                    "error": "The cloud-region test returned an invalid report.",
+                }
+
+            return {
+                "ok": True,
+                "report": report,
+            }
+
+        except ValueError:
+            return {
+                "ok": False,
+                "error": "The cloud-region test parameters were rejected.",
+            }
+
+        except Exception:
+            return {
+                "ok": False,
+                "error": (
+                    "Cloud-region responsiveness could not be measured. "
+                    "Check your connection and try again."
+                ),
+            }
+
+        finally:
+            self._cloud_lock.release()
 
     def start_stability_watch(
         self,
