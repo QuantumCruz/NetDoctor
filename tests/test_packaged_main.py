@@ -1,4 +1,5 @@
-"""Offline bundle validation; never opens WebView2 or makes a network request."""
+
+"""Offline packaging checks and startup-error logging regression tests."""
 
 import json
 import sys
@@ -98,6 +99,21 @@ def test_frozen_lookup_uses_meipass(tmp_path, monkeypatch):
     assert packaged_main.frontend_directory() == (
         tmp_path / "ui" / "dist"
     )
+
+
+def _mock_dashboard(monkeypatch, *, start=None, create=None):
+    class DashboardAPI:
+        def shutdown(self):
+            pass
+
+    module = ModuleType("netdoctor.webdesktop")
+    module.DashboardAPI = DashboardAPI
+    monkeypatch.setitem(sys.modules, "netdoctor.webdesktop", module)
+
+    webview = ModuleType("webview")
+    webview.create_window = create or (lambda *args, **kwargs: None)
+    webview.start = start or (lambda *args, **kwargs: None)
+    monkeypatch.setitem(sys.modules, "webview", webview)
 
 
 def test_smoke_check_is_read_only_and_checks_bridge(
@@ -207,3 +223,117 @@ def test_invalid_arguments_do_not_launch_gui(monkeypatch):
     )
 
     assert packaged_main.main(["unexpected"]) == 2
+
+
+def test_renderer_failure_logs_real_exception(tmp_path, monkeypatch):
+    root = frontend(tmp_path)
+    messages = []
+
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setattr(
+        packaged_main,
+        "frontend_directory",
+        lambda: root,
+    )
+    monkeypatch.setattr(
+        packaged_main,
+        "_show_error",
+        messages.append,
+    )
+
+    def fail_renderer(**kwargs):
+        assert kwargs["gui"] == "edgechromium"
+        raise RuntimeError("Renderer initialization failed")
+
+    _mock_dashboard(monkeypatch, start=fail_renderer)
+
+    assert packaged_main.launch() == 1
+
+    log = tmp_path / "NetDoctor" / "logs" / "startup.log"
+    assert log.is_file()
+
+    content = log.read_text(encoding="utf-8")
+
+    assert "Windows dashboard initialization" in content
+    assert "RuntimeError: Renderer initialization failed" in content
+    assert "fail_renderer" in content
+    assert str(log) in messages[0]
+
+
+def test_missing_frontend_logs_specific_problem(tmp_path, monkeypatch):
+    messages = []
+
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setattr(
+        packaged_main,
+        "frontend_directory",
+        lambda: tmp_path,
+    )
+    monkeypatch.setattr(
+        packaged_main,
+        "_show_error",
+        messages.append,
+    )
+
+    assert packaged_main.launch() == 2
+
+    log = tmp_path / "NetDoctor" / "logs" / "startup.log"
+
+    assert "Compiled index.html is missing." in log.read_text(
+        encoding="utf-8"
+    )
+    assert "missing or incomplete" in messages[0]
+
+
+def test_successful_dashboard_does_not_create_failure_log(
+    tmp_path,
+    monkeypatch,
+):
+    root = frontend(tmp_path)
+
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setattr(
+        packaged_main,
+        "frontend_directory",
+        lambda: root,
+    )
+
+    _mock_dashboard(monkeypatch)
+
+    assert packaged_main.launch() == 0
+
+    assert not (
+        tmp_path / "NetDoctor" / "logs" / "startup.log"
+    ).exists()
+
+
+def test_log_write_failure_still_displays_error(
+    tmp_path,
+    monkeypatch,
+):
+    root = frontend(tmp_path)
+    messages = []
+
+    monkeypatch.setattr(
+        packaged_main,
+        "frontend_directory",
+        lambda: root,
+    )
+    monkeypatch.setattr(
+        packaged_main,
+        "_show_error",
+        messages.append,
+    )
+    monkeypatch.setattr(
+        packaged_main,
+        "_write_startup_error",
+        lambda *args: None,
+    )
+
+    def fail_window(*args, **kwargs):
+        raise RuntimeError("Window construction error")
+
+    _mock_dashboard(monkeypatch, create=fail_window)
+
+    assert packaged_main.launch() == 1
+    assert "could not be saved" in messages[0]

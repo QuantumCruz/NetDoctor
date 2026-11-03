@@ -1,11 +1,15 @@
+
 """NetDoctor's self-contained Windows entry point and offline bundle smoke check.
 
-The development entry point is unchanged. A frozen build uses sys._MEIPASS to
-locate bundled Vite assets, and deliberately requires Chromium WebView2.
+A frozen build uses sys._MEIPASS for Vite assets and the Chromium WebView2
+renderer. Startup failures are recorded locally, not discarded.
 """
 
 import json
+import os
 import sys
+import traceback
+from datetime import datetime, timezone
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
@@ -64,12 +68,7 @@ def frontend_directory() -> Path:
 
 
 def inspect_frontend(directory: Path | None = None) -> dict:
-    """Verify Vite output, including CSS loaded by JavaScript chunks.
-
-    Vite may inject CSS with its JavaScript runtime rather than emit an HTML
-    stylesheet link. In that case, compiled CSS inside the assets directory
-    is valid. Referenced HTML assets must still exist.
-    """
+    """Verify Vite output, including CSS loaded by JavaScript chunks."""
     directory = Path(directory) if directory is not None else frontend_directory()
     index = directory / "index.html"
 
@@ -87,7 +86,6 @@ def inspect_frontend(directory: Path | None = None) -> dict:
 
     try:
         html = index.read_text(encoding="utf-8")
-
         parser = _AssetReferences()
         parser.feed(html)
 
@@ -141,9 +139,6 @@ def inspect_frontend(directory: Path | None = None) -> dict:
             if kind == "stylesheet" and asset.suffix == ".css":
                 css_count += 1
 
-    # Vite/React may load CSS through JavaScript rather than from index.html.
-    # Only use this fallback when HTML has no declared stylesheet.
-    # Broken declared stylesheet references must still fail validation.
     if not parser.stylesheets:
         assets_dir = base / "assets"
 
@@ -224,6 +219,48 @@ def smoke_check(directory: Path | None = None) -> dict:
     }
 
 
+def _startup_log_path() -> Path:
+    """Keep exception details in the user's private app-data directory."""
+    local_data = os.environ.get("LOCALAPPDATA")
+    root = (
+        Path(local_data) / "NetDoctor"
+        if local_data
+        else Path.home() / ".netdoctor"
+    )
+    return root / "logs" / "startup.log"
+
+
+def _write_startup_error(phase: str, error: BaseException) -> Path | None:
+    """Record the original traceback without requiring a console window."""
+    path = _startup_log_path()
+
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        if path.exists() and path.stat().st_size > 1_048_576:
+            archived = path.with_name("startup.previous.log")
+            path.replace(archived)
+
+        with path.open("a", encoding="utf-8") as output:
+            output.write(
+                "\n--- NetDoctor startup failure ---\n"
+                f"UTC: {datetime.now(timezone.utc).isoformat()}\n"
+                f"Stage: {phase}\n"
+                f"Frozen: {bool(getattr(sys, 'frozen', False))}\n"
+            )
+            traceback.print_exception(
+                type(error),
+                error,
+                error.__traceback__,
+                file=output,
+            )
+
+        return path
+
+    except OSError:
+        return None
+
+
 def _show_error(message: str) -> None:
     """Make frozen startup errors visible without a terminal window."""
     if sys.platform == "win32":
@@ -244,13 +281,41 @@ def _show_error(message: str) -> None:
     print(message, file=sys.stderr)
 
 
+def _report_startup_error(
+    stage: str,
+    error: Exception,
+    message: str,
+) -> None:
+    log_path = _write_startup_error(stage, error)
+
+    if log_path is not None:
+        _show_error(
+            f"{message}\n\nTechnical details: {log_path}"
+        )
+    else:
+        _show_error(
+            f"{message}\n\nThe diagnostic log could not be saved."
+        )
+
+
 def launch() -> int:
-    frontend = inspect_frontend()
+    try:
+        frontend = inspect_frontend()
+
+    except Exception as exc:
+        _report_startup_error(
+            "frontend inspection",
+            exc,
+            "NetDoctor could not verify its bundled dashboard files.",
+        )
+        return 2
 
     if not frontend["ok"]:
-        _show_error(
+        _report_startup_error(
+            "frontend validation",
+            RuntimeError("; ".join(frontend["problems"])),
             "NetDoctor's dashboard files are missing or incomplete. "
-            "Keep the entire NetDoctor folder together and rebuild the app."
+            "Keep the entire NetDoctor folder together.",
         )
         return 2
 
@@ -274,17 +339,17 @@ def launch() -> int:
                 gui="edgechromium",
                 http_server=True,
             )
-
         finally:
             api.shutdown()
 
         return 0
 
-    except Exception:
-        _show_error(
+    except Exception as exc:
+        _report_startup_error(
+            "Windows dashboard initialization",
+            exc,
             "NetDoctor could not start its Windows dashboard. "
-            "Check that Microsoft Edge WebView2 Runtime is installed, "
-            "and keep the complete NetDoctor folder together."
+            "The exact error has been saved for diagnosis.",
         )
         return 1
 
