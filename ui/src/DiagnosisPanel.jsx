@@ -7,7 +7,11 @@ import {
   RefreshCw,
   Search,
 } from 'lucide-react';
-import { FeedbackButton, beginTask } from './feedback.jsx';
+import {
+  FeedbackButton,
+  beginTask,
+} from './feedback.jsx';
+import WebsiteDiagnosticsPanel from './WebsiteDiagnosticsPanel.jsx';
 
 const COLORS = {
   observed: '#f1c67a',
@@ -45,6 +49,7 @@ export default function DiagnosisPanel({
         'Diagnosis not available',
         'Start the Windows desktop app.'
       );
+
       return;
     }
 
@@ -85,186 +90,205 @@ export default function DiagnosisPanel({
   }, [overview, reading?.tested_at]);
 
   return (
-    <section
-      className="panel details-panel"
-      style={{ maxWidth: 1080 }}
-      aria-busy={busy}
-    >
-      <p className="eyebrow">
-        EVIDENCE-BASED TROUBLESHOOTING
-      </p>
-
-      <div
-        className="panel-heading"
-        style={{ alignItems: 'flex-start' }}
+    <>
+      <section
+        className="panel details-panel"
+        style={{ maxWidth: 1080 }}
+        aria-busy={busy}
       >
-        <div>
-          <h2>
-            {data?.headline ??
-              'Reviewing connection clues'}
-          </h2>
+        <p className="eyebrow">
+          EVIDENCE-BASED TROUBLESHOOTING
+        </p>
 
-          <p>
-            {data?.summary ??
-              'Looking at your last checks without starting new tests.'}
-          </p>
+        <div
+          className="panel-heading"
+          style={{ alignItems: 'flex-start' }}
+        >
+          <div>
+            <h2>
+              {data?.headline ??
+                'Reviewing connection clues'}
+            </h2>
+
+            <p>
+              {data?.summary ??
+                'Looking at your last checks without starting new tests.'}
+            </p>
+          </div>
+
+          <FeedbackButton
+            className="text-link"
+            busy={busy}
+            onClick={() => load()}
+          >
+            <RefreshCw size={16} />
+            Refresh insights
+          </FeedbackButton>
         </div>
 
-        <FeedbackButton
-          className="text-link"
-          busy={busy}
-          onClick={() => load()}
-        >
-          <RefreshCw size={16} />
-          Refresh insights
-        </FeedbackButton>
-      </div>
-
-      {message && (
-        <p role="alert" className="inline-warning">
-          {message}
-        </p>
-      )}
-
-      {busy && (
-        <p role="status">
-          Reviewing existing measurements…
-        </p>
-      )}
-
-      {data && (
-        <>
-          <div
-            style={{
-              display: 'grid',
-              gap: 13,
-              marginTop: 23,
-            }}
+        {message && (
+          <p
+            role="alert"
+            className="inline-warning"
           >
-            {data.findings.map(item => {
-              const tone =
-                COLORS[item.kind] || COLORS.next_check;
+            {message}
+          </p>
+        )}
 
-              const Icon =
-                item.kind === 'observed'
-                  ? AlertTriangle
-                  : item.kind === 'possible'
-                    ? Search
-                    : CheckCircle2;
+        {busy && (
+          <p role="status">
+            Reviewing existing measurements…
+          </p>
+        )}
 
-              return (
-                <article
-                  key={item.code}
-                  className="diagnosis-block"
-                  style={{
-                    margin: 0,
-                    borderLeft: `4px solid ${tone}`,
-                    padding: '18px 21px',
-                  }}
-                >
-                  <div
-                    style={{
-                      display: 'flex',
-                      gap: 10,
-                      alignItems: 'center',
-                      flexWrap: 'wrap',
-                    }}
-                  >
-                    <Icon size={21} color={tone} />
-
-                    <strong style={{ fontSize: 17 }}>
-                      {item.title}
-                    </strong>
-
-                    <span
-                      style={{
-                        color: tone,
-                        fontSize: 12,
-                        fontWeight: 700,
-                      }}
-                    >
-                      {item.kind === 'observed'
-                        ? 'Observed clue'
-                        : item.kind === 'possible'
-                          ? 'Possible contributor'
-                          : 'Suggested check'}
-                    </span>
-                  </div>
-
-                  <p>{item.evidence}</p>
-
-                  <p style={{ color: '#c4f4e8' }}>
-                    <strong>Try this:</strong>{' '}
-                    {item.next_step}
-                  </p>
-                </article>
-              );
-            })}
-          </div>
-
-          <div
-            className="diagnosis-block action"
-            style={{ marginTop: 20 }}
-          >
-            <strong>
-              Recommended next step
-            </strong>
-
-            <p>{data.next_step}</p>
-
-            <FeedbackButton
-              className="text-link"
-              busy={checking}
-              disabled={busy}
-              onClick={onRecheck}
-            >
-              <Activity size={16} />
-              Run a new quick connection check
-            </FeedbackButton>
-          </div>
-
-          <details
-            style={{
-              marginTop: 22,
-              color: '#b4c7df',
-            }}
-          >
-            <summary
-              style={{
-                cursor: 'pointer',
-                fontWeight: 700,
-              }}
-            >
-              What we know and what remains uncertain
-            </summary>
-
+        {data && (
+          <>
             <div
               style={{
-                padding: '10px 0 0 14px',
-                lineHeight: 1.7,
+                display: 'grid',
+                gap: 13,
+                marginTop: 23,
               }}
             >
-              {data.notes.map((line, i) => (
-                <p key={i}>{line}</p>
-              ))}
+              {data.findings.map(item => {
+                const tone =
+                  COLORS[item.kind] ||
+                  COLORS.next_check;
 
-              <p>
-                Recent stability rounds reviewed:{' '}
-                {data.history_rounds}
-              </p>
+                const Icon =
+                  item.kind === 'observed'
+                    ? AlertTriangle
+                    : item.kind === 'possible'
+                      ? Search
+                      : CheckCircle2;
 
-              <p>
-                Speed reading current:{' '}
-                {data.speed_fresh
-                  ? 'Within 2 hours'
-                  : 'No current reading'}
-              </p>
+                return (
+                  <article
+                    key={item.code}
+                    className="diagnosis-block"
+                    style={{
+                      margin: 0,
+                      borderLeft: `4px solid ${tone}`,
+                      padding: '18px 21px',
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: 'flex',
+                        gap: 10,
+                        alignItems: 'center',
+                        flexWrap: 'wrap',
+                      }}
+                    >
+                      <Icon
+                        size={21}
+                        color={tone}
+                      />
 
-              <p>{data.limitation}</p>
+                      <strong
+                        style={{ fontSize: 17 }}
+                      >
+                        {item.title}
+                      </strong>
+
+                      <span
+                        style={{
+                          color: tone,
+                          fontSize: 12,
+                          fontWeight: 700,
+                        }}
+                      >
+                        {item.kind === 'observed'
+                          ? 'Observed clue'
+                          : item.kind === 'possible'
+                            ? 'Possible contributor'
+                            : 'Suggested check'}
+                      </span>
+                    </div>
+
+                    <p>{item.evidence}</p>
+
+                    <p
+                      style={{
+                        color: '#c4f4e8',
+                      }}
+                    >
+                      <strong>
+                        Try this:
+                      </strong>{' '}
+                      {item.next_step}
+                    </p>
+                  </article>
+                );
+              })}
             </div>
-          </details>
-        </>
-      )}
-    </section>
+
+            <div
+              className="diagnosis-block action"
+              style={{ marginTop: 20 }}
+            >
+              <strong>
+                Recommended next step
+              </strong>
+
+              <p>{data.next_step}</p>
+
+              <FeedbackButton
+                className="text-link"
+                busy={checking}
+                disabled={busy}
+                onClick={onRecheck}
+              >
+                <Activity size={16} />
+                Run a new quick connection check
+              </FeedbackButton>
+            </div>
+
+            <details
+              style={{
+                marginTop: 22,
+                color: '#b4c7df',
+              }}
+            >
+              <summary
+                style={{
+                  cursor: 'pointer',
+                  fontWeight: 700,
+                }}
+              >
+                What we know and what remains uncertain
+              </summary>
+
+              <div
+                style={{
+                  padding: '10px 0 0 14px',
+                  lineHeight: 1.7,
+                }}
+              >
+                {data.notes.map((line, i) => (
+                  <p key={i}>{line}</p>
+                ))}
+
+                <p>
+                  Recent stability rounds reviewed:{' '}
+                  {data.history_rounds}
+                </p>
+
+                <p>
+                  Speed reading current:{' '}
+                  {data.speed_fresh
+                    ? 'Within 2 hours'
+                    : 'No current reading'}
+                </p>
+
+                <p>{data.limitation}</p>
+              </div>
+            </details>
+          </>
+        )}
+      </section>
+
+      <WebsiteDiagnosticsPanel />
+    </>
   );
 }

@@ -22,6 +22,7 @@ from netdoctor.network_context import compare_network, network_signature
 from netdoctor.network_intel import collect_intelligence
 from netdoctor.public_network import PublicLookupError, inspect_public_network
 from netdoctor.stability import StabilityHistory, StabilityMonitor
+from netdoctor.website_diagnostics import WebsiteTargetError, diagnose_website
 from netdoctor.windows import collect_snapshot
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -119,6 +120,7 @@ class DashboardAPI:
         monitor: StabilityMonitor | None = None,
         loaded_test: Callable = measure_loaded,
         cloud_comparer: Callable = compare_regions,
+        website_checker: Callable = diagnose_website,
         data_dir: Path | None = None,
     ) -> None:
         self._collector = collector
@@ -128,8 +130,10 @@ class DashboardAPI:
         self._public_lookup = public_lookup
         self._loaded_test = loaded_test
         self._cloud_comparer = cloud_comparer
+        self._website_checker = website_checker
         self._load_lock = threading.Lock()
         self._cloud_lock = threading.Lock()
+        self._website_lock = threading.Lock()
         self._last_loaded = None
         self._data_dir = data_dir or _data_dir()
 
@@ -289,6 +293,63 @@ class DashboardAPI:
         finally:
             self._cloud_lock.release()
 
+    def check_website(self, target: str) -> dict:
+        """Opt-in, direct HTTPS response check; never on dashboard startup."""
+        if (
+            not isinstance(target, str)
+            or not target.strip()
+            or len(target) > 512
+        ):
+            return {
+                "ok": False,
+                "error": (
+                    "Enter a public HTTPS website "
+                    "(maximum 512 characters)."
+                ),
+            }
+
+        if not self._website_lock.acquire(blocking=False):
+            return {
+                "ok": False,
+                "error": "A website response check is already running.",
+            }
+
+        try:
+            report = self._website_checker(target)
+
+            if (
+                not isinstance(report, dict)
+                or report.get("status")
+                not in ("responded", "inconclusive")
+            ):
+                return {
+                    "ok": False,
+                    "error": "The website check returned an invalid report.",
+                }
+
+            return {
+                "ok": True,
+                "report": report,
+            }
+
+        except WebsiteTargetError as exc:
+            return {
+                "ok": False,
+                "error": str(exc),
+            }
+
+        except Exception:
+            return {
+                "ok": False,
+                "error": (
+                    "The website response check could not finish. "
+                    "No network settings were changed."
+                ),
+            }
+
+        finally:
+            self._website_lock.release()
+
     def start_stability_watch(
         self,
         minutes: int = 10,
@@ -436,7 +497,9 @@ class DashboardAPI:
             speed = None
 
         try:
-            samples = self._monitor.status().get("samples", [])
+            samples = self._monitor.status().get(
+                "samples", []
+            )
         except Exception:
             samples = []
 
@@ -450,7 +513,9 @@ class DashboardAPI:
     def _current_signature(self) -> str | None:
         """Read local Windows configuration only; no DNS, TCP or downloads."""
         try:
-            return network_signature(self._collector())
+            return network_signature(
+                self._collector()
+            )
         except Exception:
             return None
 
@@ -471,7 +536,8 @@ class DashboardAPI:
 
         saved = (
             saved
-            if isinstance(saved, str) and saved.startswith("n1-")
+            if isinstance(saved, str)
+            and saved.startswith("n1-")
             else None
         )
 
@@ -512,7 +578,9 @@ class DashboardAPI:
                 tested_at.replace("Z", "+00:00")
             )
         except ValueError as exc:
-            raise ValueError("Invalid test timestamp.") from exc
+            raise ValueError(
+                "Invalid test timestamp."
+            ) from exc
 
         if parsed.tzinfo is None:
             raise ValueError(
@@ -520,7 +588,9 @@ class DashboardAPI:
             )
 
         return {
-            "tested_at": parsed.astimezone(timezone.utc).isoformat(),
+            "tested_at": parsed.astimezone(
+                timezone.utc
+            ).isoformat(),
             "download_mbps": _value(
                 reading.get("download_mbps"),
                 maximum=100000,
@@ -557,14 +627,21 @@ class DashboardAPI:
 
         try:
             temporary.write_text(
-                json.dumps(validated, indent=2),
+                json.dumps(
+                    validated,
+                    indent=2,
+                ),
                 encoding="utf-8",
             )
             temporary.replace(path)
         finally:
-            temporary.unlink(missing_ok=True)
+            temporary.unlink(
+                missing_ok=True
+            )
 
-        return {"saved": True}
+        return {
+            "saved": True,
+        }
 
     def shutdown(self) -> None:
         self._monitor.stop()
