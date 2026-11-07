@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from 'react';
 import {
   Activity,
@@ -11,6 +10,7 @@ import {
   FeedbackButton,
   beginTask,
 } from './feedback.jsx';
+import GuidedTroubleshootingPanel from './GuidedTroubleshootingPanel.jsx';
 import WebsiteDiagnosticsPanel from './WebsiteDiagnosticsPanel.jsx';
 
 const COLORS = {
@@ -91,6 +91,8 @@ export default function DiagnosisPanel({
 
   return (
     <>
+      <GuidedTroubleshootingPanel />
+
       <section
         className="panel details-panel"
         style={{ maxWidth: 1080 }}

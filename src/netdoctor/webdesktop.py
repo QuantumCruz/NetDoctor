@@ -1,4 +1,3 @@
-
 """Local NetDoctor React bridge. Tests, downloads and monitoring require user action."""
 
 import json
@@ -15,6 +14,7 @@ from netdoctor.cloud_regions import compare_regions
 from netdoctor.desktop_support import explain
 from netdoctor.diagnosis_insights import analyze_diagnosis
 from netdoctor.doctor import run_doctor
+from netdoctor.guided_troubleshooting import interpret_guided
 from netdoctor.icmp import ProbeError
 from netdoctor.load_insights import summarize_loaded
 from netdoctor.loaded import LoadedError, measure_loaded
@@ -22,7 +22,11 @@ from netdoctor.network_context import compare_network, network_signature
 from netdoctor.network_intel import collect_intelligence
 from netdoctor.public_network import PublicLookupError, inspect_public_network
 from netdoctor.stability import StabilityHistory, StabilityMonitor
-from netdoctor.website_diagnostics import WebsiteTargetError, diagnose_website
+from netdoctor.website_diagnostics import (
+    WebsiteTargetError,
+    _target as validate_website_target,
+    diagnose_website,
+)
 from netdoctor.windows import collect_snapshot
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -134,6 +138,7 @@ class DashboardAPI:
         self._load_lock = threading.Lock()
         self._cloud_lock = threading.Lock()
         self._website_lock = threading.Lock()
+        self._guided_lock = threading.Lock()
         self._last_loaded = None
         self._data_dir = data_dir or _data_dir()
 
@@ -349,6 +354,96 @@ class DashboardAPI:
 
         finally:
             self._website_lock.release()
+
+    def run_guided_troubleshooting(
+        self,
+        target: str = "",
+    ) -> dict:
+        """Re-run existing checks on demand and interpret them together."""
+        if not isinstance(target, str) or len(target) > 512:
+            return {
+                "ok": False,
+                "error": "Enter an optional public HTTPS website address.",
+            }
+
+        target = target.strip()
+
+        if target:
+            try:
+                validate_website_target(target)
+            except WebsiteTargetError as exc:
+                return {
+                    "ok": False,
+                    "error": str(exc),
+                }
+
+        if not self._guided_lock.acquire(blocking=False):
+            return {
+                "ok": False,
+                "error": "A guided diagnosis is already running.",
+            }
+
+        website_acquired = False
+
+        try:
+            if target:
+                website_acquired = self._website_lock.acquire(
+                    blocking=False
+                )
+
+                if not website_acquired:
+                    return {
+                        "ok": False,
+                        "error": "A separate website check is already running.",
+                    }
+
+            snapshot = self._collector()
+            doctor = self._diagnose(snapshot)
+
+            website = None
+
+            if target:
+                website = self._website_checker(target)
+
+                if (
+                    not isinstance(website, dict)
+                    or website.get("status")
+                    not in ("responded", "inconclusive")
+                ):
+                    return {
+                        "ok": False,
+                        "error": "The targeted website check returned an invalid report.",
+                    }
+
+            return {
+                "ok": True,
+                "report": interpret_guided(
+                    snapshot,
+                    doctor,
+                    website=website,
+                ),
+            }
+
+        except WebsiteTargetError as exc:
+            return {
+                "ok": False,
+                "error": str(exc),
+            }
+
+        except Exception:
+            return {
+                "ok": False,
+                "error": (
+                    "Guided troubleshooting could not complete. "
+                    "Your network settings were not changed."
+                ),
+            }
+
+        finally:
+            if website_acquired:
+                self._website_lock.release()
+
+            self._guided_lock.release()
 
     def start_stability_watch(
         self,
