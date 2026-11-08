@@ -19,17 +19,13 @@
 
 ## What is NetDoctor?
 
-NetDoctor helps you investigate internet and local-network problems without needing to understand networking terminology.
+**Evidence-based network diagnosis for Windows.**
 
-It checks different parts of your connection, explains what the measurements mean, and suggests practical next steps.
+NetDoctor helps users investigate whether connectivity problems may originate from their device, local network or router, or internet service provider.
 
-NetDoctor distinguishes between:
+Built with Nigerian networking conditions in mind, it combines connectivity checks, speed measurements, stability monitoring, cloud-region TCP timing, and NAT/CGNAT indicators with understandable explanations.
 
-- **Observed:** Something it actually measured.
-- **Possible:** An explanation consistent with the evidence.
-- **Unknown:** Something that cannot reliably be established.
-
-It does not invent a universal network-health score or blame an ISP without supporting evidence.
+NetDoctor distinguishes measured evidence from possible causes and unknowns. It does not claim to identify every network fault conclusively.
 
 ## Features
 
