@@ -25,7 +25,6 @@ netdoctor = "netdoctor.cli:main"
 
 [project.gui-scripts]
 netdoctor-desktop = "netdoctor.webdesktop:main"
-netdoctor-legacy-desktop = "netdoctor.desktop:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
