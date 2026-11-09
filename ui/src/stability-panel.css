@@ -1,0 +1,84 @@
+
+/*
+ * Stability page presentation only.
+ * These rules replace inline styles in StabilityPanel.jsx.
+ * Monitoring behavior and diagnostic logic remain unchanged.
+ */
+
+.details-panel.nd-stability-panel {
+  max-width: 1080px;
+}
+
+.nd-stability-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  margin: 22px 0;
+}
+
+.nd-stability-duration-label {
+  color: #adbed4;
+  font-size: 13px;
+}
+
+.nd-stability-duration-select {
+  padding: 11px;
+  color: #eaf1ff;
+  background: #0b1528;
+  border: 1px solid #35506f;
+  border-radius: 9px;
+}
+
+.nd-stability-panel .nd-stability-status {
+  color: #aebfd5;
+}
+
+.nd-stability-panel .nd-stability-status-running {
+  color: #70ead2;
+}
+
+.nd-stability-status-icon {
+  vertical-align: middle;
+  margin-right: 8px;
+}
+
+.details-panel .diagnosis-block.nd-stability-history {
+  margin-top: 18px;
+}
+
+.nd-stability-archive-notice {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.metric-row.nd-stability-metrics {
+  margin-top: 23px;
+}
+
+.mini-metric.nd-stability-metric {
+  display: block;
+}
+
+.mini-metric .nd-stability-count {
+  display: block;
+  margin-top: 14px;
+  font-size: 30px;
+}
+
+.mini-metric .nd-stability-count-ok {
+  color: #63e8cb;
+}
+
+.mini-metric .nd-stability-count-mixed {
+  color: #f1c67a;
+}
+
+.mini-metric .nd-stability-count-failed {
+  color: #ef8f8f;
+}
+
+.nd-stability-timeline {
+  margin-top: 24px;
+}

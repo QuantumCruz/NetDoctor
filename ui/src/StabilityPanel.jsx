@@ -1,3 +1,4 @@
+
 import { useEffect, useRef, useState } from 'react';
 import {
   Activity,
@@ -12,12 +13,7 @@ import {
   beginTask,
 } from './feedback.jsx';
 import StabilityTimeline from './StabilityTimeline.jsx';
-
-const PALETTE = {
-  ok: '#63e8cb',
-  mixed: '#f1c67a',
-  failed: '#ef8f8f',
-};
+import './stability-panel.css';
 
 const EMPTY = {
   running: false,
@@ -315,8 +311,7 @@ export default function StabilityPanel() {
 
   return (
     <section
-      className="panel details-panel"
-      style={{ maxWidth: 1080 }}
+      className="panel details-panel nd-stability-panel"
     >
       <p className="eyebrow">
         LOCAL CONNECTION HISTORY
@@ -330,21 +325,10 @@ export default function StabilityPanel() {
         No speed-test downloads or network-setting changes.
       </p>
 
-      <div
-        style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          alignItems: 'center',
-          gap: 14,
-          margin: '22px 0',
-        }}
-      >
+      <div className="nd-stability-controls">
         <label
           htmlFor="watch-duration"
-          style={{
-            color: '#adbed4',
-            fontSize: 13,
-          }}
+          className="nd-stability-duration-label"
         >
           Session length
         </label>
@@ -364,13 +348,7 @@ export default function StabilityPanel() {
               `${n} minutes. Monitoring has not started.`
             );
           }}
-          style={{
-            padding: 11,
-            color: '#eaf1ff',
-            background: '#0b1528',
-            border: '1px solid #35506f',
-            borderRadius: 9,
-          }}
+          className="nd-stability-duration-select"
         >
           <option value={5}>
             5 minutes
@@ -421,21 +399,15 @@ export default function StabilityPanel() {
       <p
         role="status"
         className={
-          state.running ? 'nd-running' : ''
+          state.running
+            ? 'nd-stability-status nd-running nd-stability-status-running'
+            : 'nd-stability-status'
         }
-        style={{
-          color: state.running
-            ? '#70ead2'
-            : '#aebfd5',
-        }}
       >
         {!state.running && (
           <Activity
             size={15}
-            style={{
-              verticalAlign: 'middle',
-              marginRight: 8,
-            }}
+            className="nd-stability-status-icon"
           />
         )}
 
@@ -454,8 +426,7 @@ export default function StabilityPanel() {
       )}
 
       <div
-        className="diagnosis-block"
-        style={{ marginTop: 18 }}
+        className="diagnosis-block nd-stability-history"
       >
         <strong>
           {scope === 'current'
@@ -471,13 +442,7 @@ export default function StabilityPanel() {
         </p>
 
         {(state.other_network_count ?? 0) > 0 && (
-          <p
-            style={{
-              display: 'flex',
-              gap: 8,
-              alignItems: 'center',
-            }}
-          >
+          <p className="nd-stability-archive-notice">
             <Archive size={16} />
 
             {state.other_network_count} earlier
@@ -488,40 +453,33 @@ export default function StabilityPanel() {
       </div>
 
       <div
-        className="metric-row"
-        style={{ marginTop: 23 }}
+        className="metric-row nd-stability-metrics"
       >
         {[
           [
             'Both checks connected',
             counts.ok,
-            PALETTE.ok,
+            'ok',
           ],
           [
             'One connected',
             counts.mixed,
-            PALETTE.mixed,
+            'mixed',
           ],
           [
             'Neither connected',
             counts.failed,
-            PALETTE.failed,
+            'failed',
           ],
-        ].map(([label, count, color]) => (
+        ].map(([label, count, status]) => (
           <article
-            className="mini-metric"
+            className="mini-metric nd-stability-metric"
             key={label}
-            style={{ display: 'block' }}
           >
             <span>{label}</span>
 
             <strong
-              style={{
-                display: 'block',
-                color,
-                marginTop: 14,
-                fontSize: 30,
-              }}
+              className={`nd-stability-count nd-stability-count-${status}`}
             >
               {count}
             </strong>
@@ -529,7 +487,7 @@ export default function StabilityPanel() {
         ))}
       </div>
 
-      <div style={{ marginTop: 24 }}>
+      <div className="nd-stability-timeline">
         <StabilityTimeline
           samples={samples}
           intervalSeconds={

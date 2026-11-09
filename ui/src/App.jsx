@@ -218,14 +218,8 @@ export default function App() {
     }
   }
 
-  function openTab(id, label) {
+  function openTab(id) {
     setTab(id);
-
-    notify(
-      'info',
-      `${label} opened`,
-      'You can use the controls on this page.'
-    );
   }
 
   useEffect(() => {
@@ -538,7 +532,7 @@ export default function App() {
           <button
             key={id}
             className={`nav ${tab === id ? 'selected' : ''}`}
-            onClick={() => openTab(id, label)}
+            onClick={() => openTab(id)}
           >
             <Icon size={19} /> {label}
           </button>
@@ -704,7 +698,7 @@ export default function App() {
 
                   <button
                     className="detail-link"
-                    onClick={() => openTab('diagnosis', 'Diagnosis')}
+                    onClick={() => openTab('diagnosis')}
                   >
                     Investigate possible causes →
                   </button>
@@ -712,7 +706,7 @@ export default function App() {
                   <div style={{ marginTop: 16 }}>
                     <button
                       className="detail-link"
-                      onClick={() => openTab('activities', 'Activities')}
+                      onClick={() => openTab('activities')}
                     >
                       Gaming, streaming and video-call insights →
                     </button>
@@ -758,12 +752,37 @@ export default function App() {
                     quiet
                   />
 
-                  <button
-                    className="detail-link"
-                    onClick={() => openTab('details', 'Network details')}
+                  <div
+                    style={{
+                      marginTop: 16,
+                      paddingTop: 15,
+                      borderTop: '1px solid #263650',
+                    }}
                   >
-                    Check public IP and connection details →
-                  </button>
+                    <strong>
+                      Want to check for CGNAT?
+                    </strong>
+
+                    <p>
+                      Open your router settings and look for
+                      its WAN IPv4 address under Internet,
+                      WAN, or Status. Enter it in Network
+                      details so NetDoctor can compare it
+                      with your observed public IP.
+                    </p>
+
+                    <p className="disclaimer">
+                      The comparison provides clues, not
+                      definitive proof of CGNAT.
+                    </p>
+
+                    <button
+                      className="detail-link"
+                      onClick={() => openTab('details')}
+                    >
+                      Check for CGNAT →
+                    </button>
+                  </div>
                 </article>
               </section>
             </>

@@ -81,15 +81,17 @@ button:disabled {
 .nav {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   width: 100%;
   border: 1px solid transparent;
   color: #9eafc9;
   background: transparent;
   text-align: left;
-  padding: 13px 12px;
+  padding: 13px 8px;
   border-radius: 12px;
+  font-size: 13px;
   font-weight: 650;
+  white-space: nowrap;
 }
 
 .nav:hover {
