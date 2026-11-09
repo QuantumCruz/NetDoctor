@@ -1,6 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
-import { Activity, Play, Square, RefreshCw, Archive } from 'lucide-react';
-import { FeedbackButton, notify, beginTask } from './feedback.jsx';
+import {
+  Activity,
+  Play,
+  Square,
+  RefreshCw,
+  Archive,
+} from 'lucide-react';
+import {
+  FeedbackButton,
+  notify,
+  beginTask,
+} from './feedback.jsx';
+import StabilityTimeline from './StabilityTimeline.jsx';
 
 const PALETTE = {
   ok: '#63e8cb',
@@ -11,83 +22,17 @@ const PALETTE = {
 const EMPTY = {
   running: false,
   samples: [],
-  counts: { ok: 0, mixed: 0, failed: 0 },
+  counts: {
+    ok: 0,
+    mixed: 0,
+    failed: 0,
+  },
   message: 'No connection watch has started.',
   history_scope: 'unverified',
-  history_notice: 'Previous history is not assigned to the current connection.',
+  history_notice:
+    'Previous history is not assigned to the current connection.',
   other_network_count: 0,
 };
-
-function Timeline({ samples }) {
-  if (!samples.length) {
-    return (
-      <p style={{
-        color: '#91a7c2',
-        padding: '28px 10px',
-        textAlign: 'center',
-      }}>
-        No checks recorded for this connection yet.
-        Start a watch to create a timeline.
-      </p>
-    );
-  }
-
-  const width = 800;
-  const step = width / Math.max(120, samples.length);
-
-  return (
-    <div style={{ overflowX: 'auto', margin: '18px 0' }}>
-      <svg
-        viewBox={`0 0 ${width} 115`}
-        width="100%"
-        role="img"
-        aria-label={`${samples.length} current-connection checks, oldest to newest`}
-      >
-        <line
-          x1="0"
-          x2={width}
-          y1="100"
-          y2="100"
-          stroke="#324861"
-        />
-
-        {samples.map((item, index) => (
-          <rect
-            key={`${item.checked_at}-${index}`}
-            x={index * step + 1}
-            y={
-              item.state === 'failed'
-                ? 29
-                : item.state === 'mixed'
-                  ? 44
-                  : 12
-            }
-            width={Math.max(3, step - 2)}
-            height={
-              item.state === 'failed'
-                ? 71
-                : item.state === 'mixed'
-                  ? 56
-                  : 88
-            }
-            rx="2"
-            fill={PALETTE[item.state] || '#7f95b2'}
-          >
-            <title>
-              {`${new Date(item.checked_at).toLocaleString()}: ${item.state}; gateway ping: ${
-                item.gateway_reply == null
-                  ? 'unknown'
-                  : item.gateway_reply
-                    ? 'reply'
-                    : 'no reply'
-              }`}
-            </title>
-          </rect>
-        ))}
-      </svg>
-    </div>
-  );
-}
 
 export default function StabilityPanel() {
   const [state, setState] = useState(EMPTY);
@@ -112,6 +57,7 @@ export default function StabilityPanel() {
           'Open the Windows desktop app.'
         );
       }
+
       return;
     }
 
@@ -122,7 +68,9 @@ export default function StabilityPanel() {
           'Reading locally saved checks.'
         );
 
-    if (!silent) setRefreshing(true);
+    if (!silent) {
+      setRefreshing(true);
+    }
 
     try {
       const next =
@@ -144,13 +92,17 @@ export default function StabilityPanel() {
         previousRunning.current &&
         !next.running
       ) {
-        if (next.message === 'Monitoring session completed.') {
+        if (
+          next.message === 'Monitoring session completed.'
+        ) {
           notify(
             'success',
             'Stability watch completed',
             'The selected monitoring session finished.'
           );
-        } else if (next.message?.includes('configuration changed')) {
+        } else if (
+          next.message?.includes('configuration changed')
+        ) {
           notify(
             'warning',
             'Monitoring ended after network change',
@@ -161,7 +113,6 @@ export default function StabilityPanel() {
 
       previousRunning.current = Boolean(next.running);
       mounted.current = true;
-
     } catch {
       setError(
         'Could not read the saved connection history.'
@@ -173,7 +124,9 @@ export default function StabilityPanel() {
         'Local connection history could not be read.'
       );
     } finally {
-      if (!silent) setRefreshing(false);
+      if (!silent) {
+        setRefreshing(false);
+      }
     }
   }
 
@@ -193,7 +146,9 @@ export default function StabilityPanel() {
         const next =
           await window.pywebview.api.get_stability_status();
 
-        if (!active) return;
+        if (!active) {
+          return;
+        }
 
         setState(next);
 
@@ -202,13 +157,17 @@ export default function StabilityPanel() {
           previousRunning.current &&
           !next.running
         ) {
-          if (next.message === 'Monitoring session completed.') {
+          if (
+            next.message === 'Monitoring session completed.'
+          ) {
             notify(
               'success',
               'Stability watch completed',
               'The selected session has finished.'
             );
-          } else if (next.message?.includes('configuration changed')) {
+          } else if (
+            next.message?.includes('configuration changed')
+          ) {
             notify(
               'warning',
               'Network configuration changed',
@@ -219,7 +178,6 @@ export default function StabilityPanel() {
 
         previousRunning.current = Boolean(next.running);
         mounted.current = true;
-
       } catch {
         if (active) {
           setError(
@@ -271,16 +229,17 @@ export default function StabilityPanel() {
         await readStatus({ silent: true });
       } else {
         setError(
-          answer?.message || 'Could not start monitoring.'
+          answer?.message ||
+          'Could not start monitoring.'
         );
 
         finish(
           'warning',
           'Monitoring not started',
-          answer?.message || 'No session started.'
+          answer?.message ||
+          'No session started.'
         );
       }
-
     } catch {
       setError('Could not start monitoring.');
 
@@ -289,7 +248,6 @@ export default function StabilityPanel() {
         'Start failed',
         'The watch could not be started.'
       );
-
     } finally {
       setPending(false);
     }
@@ -322,19 +280,19 @@ export default function StabilityPanel() {
         );
 
         await readStatus({ silent: true });
-
       } else {
         setError(
-          answer?.message || 'Could not stop monitoring.'
+          answer?.message ||
+          'Could not stop monitoring.'
         );
 
         finish(
           'error',
           'Stop request failed',
-          answer?.message || 'Try refreshing status.'
+          answer?.message ||
+          'Try refreshing status.'
         );
       }
-
     } catch {
       setError(
         'Could not stop monitoring normally.'
@@ -345,7 +303,6 @@ export default function StabilityPanel() {
         'Stop request failed',
         'The monitor may still be active.'
       );
-
     } finally {
       setPending(false);
     }
@@ -353,7 +310,8 @@ export default function StabilityPanel() {
 
   const samples = state.samples || [];
   const counts = state.counts || EMPTY.counts;
-  const scope = state.history_scope || 'unverified';
+  const scope =
+    state.history_scope || 'unverified';
 
   return (
     <section
@@ -367,21 +325,26 @@ export default function StabilityPanel() {
       <h2>Connection stability</h2>
 
       <p>
-        Watch for intermittent trouble with small connection
-        checks every 10 seconds. No speed-test downloads or
-        network-setting changes.
+        Watch for intermittent trouble with small
+        connection checks every 10 seconds.
+        No speed-test downloads or network-setting changes.
       </p>
 
-      <div style={{
-        display: 'flex',
-        flexWrap: 'wrap',
-        alignItems: 'center',
-        gap: 14,
-        margin: '22px 0',
-      }}>
+      <div
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          gap: 14,
+          margin: '22px 0',
+        }}
+      >
         <label
           htmlFor="watch-duration"
-          style={{ color: '#adbed4', fontSize: 13 }}
+          style={{
+            color: '#adbed4',
+            fontSize: 13,
+          }}
         >
           Session length
         </label>
@@ -392,7 +355,9 @@ export default function StabilityPanel() {
           disabled={state.running || pending}
           onChange={event => {
             const n = Number(event.target.value);
+
             setDuration(n);
+
             notify(
               'info',
               'Duration selected',
@@ -407,9 +372,17 @@ export default function StabilityPanel() {
             borderRadius: 9,
           }}
         >
-          <option value={5}>5 minutes</option>
-          <option value={10}>10 minutes</option>
-          <option value={30}>30 minutes</option>
+          <option value={5}>
+            5 minutes
+          </option>
+
+          <option value={10}>
+            10 minutes
+          </option>
+
+          <option value={30}>
+            30 minutes
+          </option>
         </select>
 
         {state.running ? (
@@ -419,7 +392,8 @@ export default function StabilityPanel() {
             busy={pending}
             onClick={stop}
           >
-            <Square size={16} /> Stop monitoring
+            <Square size={16} />
+            Stop monitoring
           </FeedbackButton>
         ) : (
           <FeedbackButton
@@ -428,7 +402,8 @@ export default function StabilityPanel() {
             busy={pending}
             onClick={start}
           >
-            <Play size={16} /> Start monitoring
+            <Play size={16} />
+            Start monitoring
           </FeedbackButton>
         )}
 
@@ -438,15 +413,20 @@ export default function StabilityPanel() {
           busy={refreshing}
           onClick={() => readStatus()}
         >
-          <RefreshCw size={16} /> Refresh
+          <RefreshCw size={16} />
+          Refresh
         </FeedbackButton>
       </div>
 
       <p
         role="status"
-        className={state.running ? 'nd-running' : ''}
+        className={
+          state.running ? 'nd-running' : ''
+        }
         style={{
-          color: state.running ? '#70ead2' : '#aebfd5',
+          color: state.running
+            ? '#70ead2'
+            : '#aebfd5',
         }}
       >
         {!state.running && (
@@ -465,7 +445,10 @@ export default function StabilityPanel() {
       </p>
 
       {error && (
-        <p className="inline-warning" role="alert">
+        <p
+          className="inline-warning"
+          role="alert"
+        >
           {error}
         </p>
       )}
@@ -483,20 +466,23 @@ export default function StabilityPanel() {
         </strong>
 
         <p>
-          {state.history_notice || EMPTY.history_notice}
+          {state.history_notice ||
+            EMPTY.history_notice}
         </p>
 
         {(state.other_network_count ?? 0) > 0 && (
-          <p style={{
-            display: 'flex',
-            gap: 8,
-            alignItems: 'center',
-          }}>
+          <p
+            style={{
+              display: 'flex',
+              gap: 8,
+              alignItems: 'center',
+            }}
+          >
             <Archive size={16} />
 
-            {state.other_network_count} earlier or
-            other-network checks are retained locally,
-            but excluded from these figures.
+            {state.other_network_count} earlier
+            or other-network checks are retained
+            locally, but excluded from these figures.
           </p>
         )}
       </div>
@@ -506,9 +492,21 @@ export default function StabilityPanel() {
         style={{ marginTop: 23 }}
       >
         {[
-          ['Both checks connected', counts.ok, PALETTE.ok],
-          ['One connected', counts.mixed, PALETTE.mixed],
-          ['Neither connected', counts.failed, PALETTE.failed],
+          [
+            'Both checks connected',
+            counts.ok,
+            PALETTE.ok,
+          ],
+          [
+            'One connected',
+            counts.mixed,
+            PALETTE.mixed,
+          ],
+          [
+            'Neither connected',
+            counts.failed,
+            PALETTE.failed,
+          ],
         ].map(([label, count, color]) => (
           <article
             className="mini-metric"
@@ -517,12 +515,14 @@ export default function StabilityPanel() {
           >
             <span>{label}</span>
 
-            <strong style={{
-              display: 'block',
-              color,
-              marginTop: 14,
-              fontSize: 30,
-            }}>
+            <strong
+              style={{
+                display: 'block',
+                color,
+                marginTop: 14,
+                fontSize: 30,
+              }}
+            >
               {count}
             </strong>
           </article>
@@ -530,48 +530,21 @@ export default function StabilityPanel() {
       </div>
 
       <div style={{ marginTop: 24 }}>
-        <strong>
-          Recent checks on this connection
-        </strong>
-
-        <Timeline samples={samples} />
-
-        <div style={{
-          display: 'flex',
-          gap: 20,
-          flexWrap: 'wrap',
-          color: '#aebfd5',
-          fontSize: 12,
-        }}>
-          {Object.entries(PALETTE).map(
-            ([name, color]) => (
-              <span key={name}>
-                <span style={{
-                  display: 'inline-block',
-                  background: color,
-                  width: 9,
-                  height: 9,
-                  marginRight: 6,
-                  borderRadius: 2,
-                }} />
-
-                {name === 'ok'
-                  ? 'Both connected'
-                  : name === 'mixed'
-                    ? 'One connected'
-                    : 'Neither connected'}
-              </span>
-            )
-          )}
-        </div>
+        <StabilityTimeline
+          samples={samples}
+          intervalSeconds={
+            state.interval_seconds ?? 10
+          }
+        />
       </div>
 
       <p className="disclaimer">
-        Up to 120 checks are displayed, with 1,000 stored
-        across all connections. Previous unassigned history
-        is preserved. A failed TCP check does not prove an
-        ISP outage. Route details may repeat on different
-        physical networks.
+        Up to 120 checks are displayed,
+        with 1,000 stored across all connections.
+        Previous unassigned history is preserved.
+        A failed TCP check does not prove an
+        ISP outage. Route details may repeat
+        on different physical networks.
       </p>
 
       <p className="disclaimer">
