@@ -1,3 +1,4 @@
+
 import { useRef, useState } from 'react';
 import {
   AlertTriangle,
@@ -18,25 +19,45 @@ const STATUS = {
     Icon: CheckCircle2,
   },
   mixed: {
-    label: 'Mixed evidence',
+    label: 'Possible issue',
     color: '#f1c67a',
     Icon: AlertTriangle,
   },
   attention: {
-    label: 'Needs attention',
+    label: 'Needs checking',
     color: '#f1c67a',
     Icon: AlertTriangle,
   },
   inconclusive: {
-    label: 'Inconclusive',
+    label: 'Unknown',
     color: '#90c8f4',
     Icon: HelpCircle,
   },
   not_tested: {
-    label: 'Not measured',
+    label: 'Not checked',
     color: '#9aaec7',
     Icon: HelpCircle,
   },
+};
+
+const STAGE_LABELS = {
+  local: 'Local connection',
+  dns: 'Website name lookup',
+  internet: 'Internet access',
+  website: 'Selected website',
+};
+
+const FRIENDLY_HEADLINES = {
+  'General HTTPS and the selected website responded':
+    'The tested services and website responded',
+  'General connectivity works; the selected website needs investigation':
+    'The selected website needs a closer look',
+  'The selected website responded despite other uncertain checks':
+    'The website responded, but some checks were unclear',
+  'Connection behavior differs by destination':
+    'Some services responded; others did not',
+  'Internet reachability remains unverified':
+    'Internet access could not be confirmed',
 };
 
 const INPUT_STYLE = {
@@ -49,64 +70,39 @@ const INPUT_STYLE = {
   border: '1px solid #37506e',
 };
 
-function ResultStep({ step, number }) {
+function CheckRow({ step }) {
   const tone = STATUS[step.status] || STATUS.inconclusive;
   const Icon = tone.Icon;
 
   return (
-    <article
-      className="diagnosis-block"
+    <div
       style={{
-        margin: 0,
-        borderLeft: `4px solid ${tone.color}`,
-        padding: '18px 20px',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: 10,
+        padding: '12px 0',
+        borderBottom: '1px solid #2b405b',
       }}
     >
-      <div
+      <strong>
+        {STAGE_LABELS[step.key] || step.title}
+      </strong>
+
+      <span
         style={{
-          display: 'flex',
+          display: 'inline-flex',
           alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: 10,
+          gap: 7,
+          color: tone.color,
+          fontSize: 13,
         }}
       >
-        <span
-          style={{
-            color: '#a9bdd5',
-            fontWeight: 700,
-          }}
-        >
-          {number}.
-        </span>
-
-        <Icon
-          size={20}
-          color={tone.color}
-          aria-hidden="true"
-        />
-
-        <strong style={{ fontSize: 16 }}>
-          {step.title}
-        </strong>
-
-        <span
-          style={{
-            color: tone.color,
-            fontSize: 12,
-            fontWeight: 700,
-          }}
-        >
-          {tone.label}
-        </span>
-      </div>
-
-      <p>{step.evidence}</p>
-
-      <p style={{ color: '#c4f4e8' }}>
-        <strong>Next step:</strong>{' '}
-        {step.next_step}
-      </p>
-    </article>
+        <Icon size={17} aria-hidden="true" />
+        {tone.label}
+      </span>
+    </div>
   );
 }
 
@@ -114,27 +110,15 @@ function WebsiteTimings({ website }) {
   if (!website) return null;
 
   const measurements = [
-    ['DNS lookup', website.dns_ms],
-    ['TCP connection', website.tcp_ms],
-    ['TLS handshake', website.tls_ms],
-    ['HTTP first response', website.response_ms],
+    ['Website name lookup', website.dns_ms],
+    ['Connecting to the website', website.tcp_ms],
+    ['Setting up the secure connection', website.tls_ms],
+    ['First response from the website', website.response_ms],
   ];
 
   return (
-    <details
-      style={{
-        marginTop: 16,
-        color: '#b4c7df',
-      }}
-    >
-      <summary
-        style={{
-          cursor: 'pointer',
-          fontWeight: 700,
-        }}
-      >
-        Detailed website measurements
-      </summary>
+    <div style={{ marginTop: 18 }}>
+      <strong>Website measurements</strong>
 
       <div
         style={{
@@ -142,7 +126,7 @@ function WebsiteTimings({ website }) {
           gridTemplateColumns:
             'repeat(auto-fit, minmax(180px, 1fr))',
           gap: 10,
-          marginTop: 14,
+          marginTop: 10,
         }}
       >
         {measurements.map(([label, value]) => (
@@ -151,16 +135,9 @@ function WebsiteTimings({ website }) {
             className="diagnosis-block"
             style={{ margin: 0 }}
           >
-            <p
-              style={{
-                fontSize: 12,
-                marginTop: 0,
-              }}
-            >
-              {label}
-            </p>
+            <p>{label}</p>
 
-            <strong style={{ fontSize: 18 }}>
+            <strong>
               {typeof value === 'number' &&
               Number.isFinite(value)
                 ? `${value.toFixed(1)} ms`
@@ -170,17 +147,22 @@ function WebsiteTimings({ website }) {
         ))}
       </div>
 
-      <p style={{ marginTop: 12 }}>
-        HTTP status: {website.http_status ?? 'Unavailable'}
-        {' · '}
-        Address family:{' '}
-        {website.address_family ?? 'Not determined'}
+      <p>
+        HTTP status: {website.http_status ?? 'Not received'}
+      </p>
+
+      <p>
+        IP version: {website.address_family ?? 'Unknown'}
       </p>
 
       <p style={{ overflowWrap: 'anywhere' }}>
-        Destination: {website.target ?? 'Not reported'}
+        Website: {website.target ?? 'Not reported'}
       </p>
-    </details>
+
+      {website.limitation && (
+        <p>{website.limitation}</p>
+      )}
+    </div>
   );
 }
 
@@ -200,27 +182,25 @@ export default function GuidedTroubleshootingPanel() {
 
     if (!api?.run_guided_troubleshooting) {
       setError(
-        'Guided troubleshooting requires the updated Windows application.'
+        'Open the updated NetDoctor Windows app to run a diagnosis.'
       );
       return;
     }
 
     const explanation = target.trim()
       ? (
-          'NetDoctor will check your local network, perform public ' +
-          'DNS and connectivity probes, and send one HTTPS HEAD ' +
-          'request to the website you entered. No file is downloaded. ' +
-          'Remote services can see your public exit IP. Continue?'
+          'NetDoctor will check your connection, contact public test services, ' +
+          'and send one small request to the website you entered. ' +
+          'Those services can see your public IP address. ' +
+          'No file will be downloaded and no settings will be changed. Continue?'
         )
       : (
-          'NetDoctor will check your local network and perform ' +
-          'short DNS, public connectivity and ICMP probes. ' +
-          'No large downloads or network setting changes. Continue?'
+          'NetDoctor will check your connection and contact public test ' +
+          'services. No large files will be downloaded and no settings ' +
+          'will be changed. Continue?'
         );
 
-    if (!window.confirm(explanation)) {
-      return;
-    }
+    if (!window.confirm(explanation)) return;
 
     running.current = true;
     setBusy(true);
@@ -228,8 +208,8 @@ export default function GuidedTroubleshootingPanel() {
     setReport(null);
 
     const finish = beginTask(
-      'Running guided troubleshooting…',
-      'Checking local routing, DNS and public connectivity.'
+      'Checking your connection…',
+      'Collecting a few short measurements.'
     );
 
     try {
@@ -241,13 +221,13 @@ export default function GuidedTroubleshootingPanel() {
       if (!answer?.ok || !answer.report) {
         const message =
           answer?.error ||
-          'The guided check could not be completed.';
+          'The diagnosis could not be completed.';
 
         setError(message);
 
         finish(
           'warning',
-          'Guided check incomplete',
+          'Diagnosis incomplete',
           message
         );
 
@@ -258,18 +238,18 @@ export default function GuidedTroubleshootingPanel() {
 
       finish(
         'success',
-        'Guided check complete',
-        'The network observations have been reviewed.'
+        'Diagnosis complete',
+        'Your results and suggested next step are ready.'
       );
     } catch {
       setError(
-        'Guided troubleshooting could not finish. Try again.'
+        'The diagnosis could not finish. Please try again.'
       );
 
       finish(
         'error',
-        'Guided check failed',
-        'Please retry on your current connection.'
+        'Diagnosis failed',
+        'Please try again.'
       );
     } finally {
       running.current = false;
@@ -280,22 +260,20 @@ export default function GuidedTroubleshootingPanel() {
   return (
     <section
       className="panel details-panel"
-      style={{
-        maxWidth: 1080,
-        marginBottom: 22,
-      }}
+      style={{ maxWidth: 1080 }}
       aria-busy={busy}
     >
       <p className="eyebrow">
-        GUIDED NETWORK TROUBLESHOOTING
+        NETWORK DIAGNOSIS
       </p>
 
-      <h2>Find out where the problem might be</h2>
+      <h2>
+        Find out what may be affecting your connection
+      </h2>
 
       <p>
-        NetDoctor checks your local connection, DNS and
-        internet access together, then explains the
-        evidence and what to try next.
+        Check your internet connection and get practical
+        advice. You can also include a specific website.
       </p>
 
       <form
@@ -303,14 +281,14 @@ export default function GuidedTroubleshootingPanel() {
         style={{ marginTop: 20 }}
       >
         <label
-          htmlFor="guided-target"
+          htmlFor="diagnosis-website"
           style={{
             display: 'block',
             fontSize: 13,
             marginBottom: 9,
           }}
         >
-          Specific website to investigate (optional)
+          Website to check (optional)
         </label>
 
         <div
@@ -321,7 +299,7 @@ export default function GuidedTroubleshootingPanel() {
           }}
         >
           <input
-            id="guided-target"
+            id="diagnosis-website"
             type="text"
             autoComplete="url"
             spellCheck={false}
@@ -343,9 +321,10 @@ export default function GuidedTroubleshootingPanel() {
             busy={busy}
           >
             <Search size={17} />
+
             {busy
-              ? 'Checking connection…'
-              : 'Start guided check'}
+              ? 'Running diagnosis…'
+              : 'Run diagnosis'}
           </FeedbackButton>
         </div>
       </form>
@@ -361,9 +340,10 @@ export default function GuidedTroubleshootingPanel() {
             marginRight: 7,
           }}
         />
-        Tests start only when requested. The optional
-        website check permits public HTTPS destinations
-        only. NetDoctor does not change network settings.
+
+        Leave the website field empty for a general
+        check. Tests run only when you choose.
+        No network settings are changed.
       </p>
 
       {busy && (
@@ -371,8 +351,8 @@ export default function GuidedTroubleshootingPanel() {
           role="status"
           style={{ color: '#85dace' }}
         >
-          Gathering fresh observations. The DNS and
-          responsiveness checks may take several seconds.
+          Checking your connection.
+          This may take several seconds.
         </p>
       )}
 
@@ -395,49 +375,106 @@ export default function GuidedTroubleshootingPanel() {
             style={{ marginBottom: 18 }}
           >
             <p className="eyebrow">
-              GUIDED RESULT
+              RESULT
             </p>
 
             <h3 style={{ marginTop: 8 }}>
-              {report.headline}
+              {FRIENDLY_HEADLINES[report.headline] ||
+                report.headline}
             </h3>
 
-            <p>{report.summary}</p>
-
-            <p style={{ color: '#c4f4e8' }}>
-              <strong>Recommended action:</strong>{' '}
-              {report.next_step}
+            <p>
+              These are observations from a short check,
+              not proof of what caused a problem.
             </p>
+
+            <strong>
+              What to try next
+            </strong>
+
+            <p>{report.next_step}</p>
           </div>
 
-          <div
-            style={{
-              display: 'grid',
-              gap: 13,
-            }}
-          >
-            {(report.steps ?? []).map((step, index) => (
-              <ResultStep
+          <h3 style={{ marginBottom: 8 }}>
+            Checks performed
+          </h3>
+
+          <div style={{ marginBottom: 18 }}>
+            {(report.steps ?? []).map(step => (
+              <CheckRow
                 key={step.key}
                 step={step}
-                number={index + 1}
               />
             ))}
           </div>
 
-          <WebsiteTimings website={report.website} />
-
-          <p
-            className="disclaimer"
-            style={{ marginTop: 17 }}
+          <details
+            style={{
+              marginTop: 18,
+              padding: '13px 16px',
+              borderRadius: 10,
+              border: '1px solid #2b405b',
+              color: '#b4c7df',
+            }}
           >
-            {report.limitation}
-          </p>
+            <summary
+              style={{
+                cursor: 'pointer',
+                fontWeight: 700,
+              }}
+            >
+              Details — measurements and limitations
+            </summary>
 
-          <p className="disclaimer">
-            Checked:{' '}
-            {new Date(report.tested_at).toLocaleString()}
-          </p>
+            <div
+              style={{
+                paddingTop: 12,
+                lineHeight: 1.65,
+              }}
+            >
+              <p>
+                <strong>Summary:</strong>{' '}
+                {report.summary}
+              </p>
+
+              <p>
+                <strong>How to read the results:</strong>{' '}
+                Observed means a check produced evidence.
+                Possible means a problem may need investigating.
+                Unknown means the check did not establish a clear
+                result.
+              </p>
+
+              {(report.steps ?? []).map(step => (
+                <div
+                  key={step.key}
+                  style={{ marginTop: 14 }}
+                >
+                  <strong>{step.title}</strong>
+
+                  <p>{step.evidence}</p>
+
+                  <p>
+                    <strong>Suggested check:</strong>{' '}
+                    {step.next_step}
+                  </p>
+                </div>
+              ))}
+
+              <WebsiteTimings
+                website={report.website}
+              />
+
+              <p>{report.limitation}</p>
+
+              <p>
+                Checked:{' '}
+                {new Date(
+                  report.tested_at
+                ).toLocaleString()}
+              </p>
+            </div>
+          </details>
         </div>
       )}
     </section>
