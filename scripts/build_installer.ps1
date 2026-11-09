@@ -1,5 +1,5 @@
 
-# NetDoctor v0.2.0 installer build and verification.
+# NetDoctor v0.3.0 installer build and verification.
 # Run from the repository root.
 
 $ErrorActionPreference = "Stop"
@@ -11,7 +11,7 @@ $buildScript = Join-Path $root "scripts\build_windows.ps1"
 $installerSpec = Join-Path $root "packaging\NetDoctor.iss"
 $releaseDir = Join-Path $root "release"
 
-$installer = Join-Path $releaseDir "NetDoctor-Setup-v0.2.0-x64.exe"
+$installer = Join-Path $releaseDir "NetDoctor-Setup-v0.3.0-x64.exe"
 
 $requiredSource = @(
     "src\netdoctor\cloud_regions.py",
@@ -36,8 +36,8 @@ foreach ($file in $requiredSource) {
 $projectConfig = Get-Content `
     -LiteralPath (Join-Path $root "pyproject.toml") -Raw
 
-if ($projectConfig -notmatch '(?m)^version\s*=\s*"0\.2\.0"\s*$') {
-    throw "pyproject.toml must declare version 0.2.0."
+if ($projectConfig -notmatch '(?m)^version\s*=\s*"0\.3\.0"\s*$') {
+    throw "pyproject.toml must declare version 0.3.0."
 }
 
 Write-Host "Source files and version verified." -ForegroundColor Green

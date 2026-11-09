@@ -1,9 +1,9 @@
 
-; NetDoctor v0.2.0 Windows installer
+; NetDoctor v0.3.0 Windows installer
 ; Compile with Inno Setup 6.
 
 #define AppName "NetDoctor"
-#define AppVersion "0.2.0"
+#define AppVersion "0.3.0"
 #define AppPublisher "QuantumCruz"
 #define AppExeName "NetDoctor.exe"
 
@@ -26,7 +26,7 @@ ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0
 
 OutputDir=..\release
-OutputBaseFilename=NetDoctor-Setup-v0.2.0-x64
+OutputBaseFilename=NetDoctor-Setup-v0.3.0-x64
 SetupIconFile=..\assets\netdoctor.ico
 UninstallDisplayIcon={app}\NetDoctor.exe
 
@@ -39,7 +39,7 @@ RestartApplications=no
 UsePreviousAppDir=yes
 DisableProgramGroupPage=yes
 
-VersionInfoVersion=0.2.0.0
+VersionInfoVersion=0.3.0.0
 VersionInfoDescription=NetDoctor Windows Installer
 VersionInfoProductName=NetDoctor
 
