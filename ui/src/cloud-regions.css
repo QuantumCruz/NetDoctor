@@ -131,9 +131,9 @@
 .cloud-empty h3 {
   margin-bottom: 5px;
   justify-content: center;
- }
+}
 
-.cloud-empty p {
+.cloud-page .cloud-empty p {
   margin: 0 auto;
   max-width: 420px;
   color: #aabbd3;
