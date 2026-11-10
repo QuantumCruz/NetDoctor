@@ -3,9 +3,9 @@ import { useEffect, useRef, useState } from 'react';
 import SpeedTest from '@cloudflare/speedtest';
 import {
   Activity, ArrowDownToLine, ArrowUpFromLine, CheckCircle2,
-  Cloud, Gauge, Globe2, Laptop2, RefreshCw, Router, Shield,
-  Signal, Wifi, Zap, Gamepad2,
+  Globe2, Router, Shield, Signal, Wifi, Zap, RefreshCw,
 } from 'lucide-react';
+
 import StabilityPanel from './StabilityPanel.jsx';
 import ActivityPanel from './ActivityPanel.jsx';
 import DiagnosisPanel from './DiagnosisPanel.jsx';
@@ -19,12 +19,42 @@ import {
 
 const MEASUREMENTS = [
   { type: 'latency', numPackets: 6 },
-  { type: 'download', bytes: 100_000, count: 2, bypassMinDuration: true },
-  { type: 'download', bytes: 1_000_000, count: 3, bypassMinDuration: true },
-  { type: 'download', bytes: 4_000_000, count: 2, bypassMinDuration: true },
-  { type: 'upload', bytes: 100_000, count: 2, bypassMinDuration: true },
-  { type: 'upload', bytes: 1_000_000, count: 3, bypassMinDuration: true },
-  { type: 'upload', bytes: 4_000_000, count: 2, bypassMinDuration: true },
+  {
+    type: 'download',
+    bytes: 100_000,
+    count: 2,
+    bypassMinDuration: true,
+  },
+  {
+    type: 'download',
+    bytes: 1_000_000,
+    count: 3,
+    bypassMinDuration: true,
+  },
+  {
+    type: 'download',
+    bytes: 4_000_000,
+    count: 2,
+    bypassMinDuration: true,
+  },
+  {
+    type: 'upload',
+    bytes: 100_000,
+    count: 2,
+    bypassMinDuration: true,
+  },
+  {
+    type: 'upload',
+    bytes: 1_000_000,
+    count: 3,
+    bypassMinDuration: true,
+  },
+  {
+    type: 'upload',
+    bytes: 4_000_000,
+    count: 2,
+    bypassMinDuration: true,
+  },
 ];
 
 const EMPTY = {
@@ -43,40 +73,64 @@ const EMPTY = {
   cgnat: 'Not checked',
 };
 
-function measured(results, key, divisor = 1) {
+const TITLES = {
+  dashboard: 'Your connection at a glance',
+  diagnosis: 'Network diagnosis',
+  activities: 'Activity insights',
+  stability: 'Stability & history',
+  cloud: 'Cloud region comparisons',
+  details: 'Connection details',
+};
+
+function numberFrom(results, method, divisor = 1) {
   try {
-    const n = results?.[key]?.();
-    return typeof n === 'number' && Number.isFinite(n) && n >= 0
-      ? n / divisor
+    const value = results?.[method]?.();
+
+    return (
+      typeof value === 'number' &&
+      Number.isFinite(value) &&
+      value >= 0
+    )
+      ? value / divisor
       : null;
   } catch {
     return null;
   }
 }
 
-function readings(results) {
+function readSpeed(results) {
   return {
-    download_mbps: measured(
-      results, 'getDownloadBandwidth', 1_000_000
+    download_mbps: numberFrom(
+      results,
+      'getDownloadBandwidth',
+      1_000_000
     ),
-    upload_mbps: measured(
-      results, 'getUploadBandwidth', 1_000_000
+    upload_mbps: numberFrom(
+      results,
+      'getUploadBandwidth',
+      1_000_000
     ),
-    latency_ms: measured(results, 'getUnloadedLatency'),
-    jitter_ms: measured(results, 'getUnloadedJitter'),
+    latency_ms: numberFrom(
+      results,
+      'getUnloadedLatency'
+    ),
+    jitter_ms: numberFrom(
+      results,
+      'getUnloadedJitter'
+    ),
     tested_at: new Date().toISOString(),
   };
 }
 
-function speedText(n) {
-  return typeof n === 'number' && Number.isFinite(n)
-    ? n.toFixed(n >= 100 ? 0 : 1)
+function speedText(value) {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? value.toFixed(value >= 100 ? 0 : 1)
     : '—';
 }
 
-function msText(n) {
-  return typeof n === 'number' && Number.isFinite(n)
-    ? `${n.toFixed(0)} ms`
+function msText(value) {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? `${value.toFixed(0)} ms`
     : 'Not measured';
 }
 
@@ -85,9 +139,14 @@ function SpeedDial({ label, value, direction, busy }) {
     ? ArrowDownToLine
     : ArrowUpFromLine;
 
-  const max = value > 500 ? 1000 : value > 150 ? 500 : 150;
+  const maximum = value > 500
+    ? 1000
+    : value > 150
+      ? 500
+      : 150;
+
   const progress = typeof value === 'number'
-    ? Math.min(100, 100 * value / max)
+    ? Math.min(100, (100 * value) / maximum)
     : 0;
 
   return (
@@ -96,7 +155,8 @@ function SpeedDial({ label, value, direction, busy }) {
       aria-label={`${label} speed`}
     >
       <div className="dial-caption">
-        <Icon size={18} /> {label}
+        <Icon size={18} />
+        {label}
       </div>
 
       <div className="dial-wrap">
@@ -138,7 +198,7 @@ function SpeedDial({ label, value, direction, busy }) {
   );
 }
 
-function DataLine({ label, value, quiet }) {
+function DataLine({ label, value, quiet = false }) {
   return (
     <div className="data-line">
       <span>{label}</span>
@@ -149,8 +209,18 @@ function DataLine({ label, value, quiet }) {
   );
 }
 
-export default function App() {
-  const [tab, setTab] = useState('dashboard');
+/*
+ * Dashboard tools only.
+ * GuidedHome owns the application's single navigation sidebar.
+ */
+export default function App({
+  activeTab = 'dashboard',
+  onNavigate = () => {},
+}) {
+  const tab = Object.hasOwn(TITLES, activeTab)
+    ? activeTab
+    : 'dashboard';
+
   const [overview, setOverview] = useState(EMPTY);
   const [checking, setChecking] = useState(true);
   const [speed, setSpeed] = useState(null);
@@ -170,6 +240,7 @@ export default function App() {
 
     if (!window.pywebview?.api?.get_overview) {
       setChecking(false);
+
       if (!silent) {
         notify(
           'warning',
@@ -177,10 +248,12 @@ export default function App() {
           'Open NetDoctor in its Windows window.'
         );
       }
+
       return;
     }
 
     overviewBusyRef.current = true;
+    setChecking(true);
 
     const finish = silent
       ? null
@@ -189,14 +262,16 @@ export default function App() {
           'Testing current Windows network access.'
         );
 
-    setChecking(true);
-
     try {
-      const result = await window.pywebview.api.get_overview();
+      const result =
+        await window.pywebview.api.get_overview();
+
       setOverview(result);
 
       finish?.(
-        result.status === 'unverified' ? 'warning' : 'success',
+        result.status === 'unverified'
+          ? 'warning'
+          : 'success',
         'Connection check completed',
         result.headline
       );
@@ -218,10 +293,6 @@ export default function App() {
     }
   }
 
-  function openTab(id) {
-    setTab(id);
-  }
-
   useEffect(() => {
     let active = true;
 
@@ -236,12 +307,12 @@ export default function App() {
           setSpeed(old);
         }
       } catch {
-        // No earlier reading is normal.
+        // There may be no saved speed reading.
       }
     }
 
     if (window.pywebview?.api) {
-      ready();
+      void ready();
     } else {
       window.addEventListener(
         'pywebviewready',
@@ -252,17 +323,39 @@ export default function App() {
 
     return () => {
       active = false;
-      window.removeEventListener('pywebviewready', ready);
+
+      window.removeEventListener(
+        'pywebviewready',
+        ready
+      );
+
+      if (speedTimerRef.current !== null) {
+        window.clearTimeout(speedTimerRef.current);
+      }
+
+      try {
+        testerRef.current?.pause?.();
+      } catch {
+        // Closing the view.
+      }
+
+      testerRef.current = null;
     };
   }, []);
 
   function startSpeedTest() {
-    if (testerRef.current || speedState === 'running') return;
+    if (
+      testerRef.current ||
+      speedState === 'running'
+    ) {
+      return;
+    }
 
     if (!window.confirm(
       'This test transfers up to about 22.4 MB plus overhead ' +
-      '(11.2 MB download and 11.2 MB upload). Mobile data may be charged. ' +
-      'Traffic goes to an external speed-test provider. Continue?'
+      '(11.2 MB download and 11.2 MB upload). ' +
+      'Mobile data may be charged. Traffic goes to an ' +
+      'external speed-test provider. Continue?'
     )) {
       notify(
         'info',
@@ -291,7 +384,7 @@ export default function App() {
       testerRef.current = tester;
 
       tester.onResultsChange = () => {
-        setSpeed(readings(tester.results));
+        setSpeed(readSpeed(tester.results));
       };
 
       tester.onError = () => {
@@ -303,20 +396,22 @@ export default function App() {
       tester.onFinish = async results => {
         if (testerRef.current !== tester) return;
 
-        if (speedTimerRef.current) {
+        if (speedTimerRef.current !== null) {
           window.clearTimeout(speedTimerRef.current);
         }
 
         speedTimerRef.current = null;
 
-        const final = readings(results);
+        const final = readSpeed(results);
         setSpeed(final);
 
         const complete =
-          final.download_mbps != null &&
-          final.upload_mbps != null;
+          final.download_mbps !== null &&
+          final.upload_mbps !== null;
 
-        setSpeedState(complete ? 'complete' : 'incomplete');
+        setSpeedState(
+          complete ? 'complete' : 'incomplete'
+        );
 
         if (complete) {
           finish(
@@ -336,7 +431,7 @@ export default function App() {
             notify(
               'warning',
               'Speed results not saved',
-              'The measurements are still visible until you close this window.'
+              'The measurements remain visible in this window.'
             );
           }
         } else {
@@ -354,11 +449,9 @@ export default function App() {
         if (testerRef.current !== tester) return;
 
         try {
-          if (typeof tester.pause === 'function') {
-            tester.pause();
-          }
+          tester.pause?.();
         } catch {
-          // Timeout already recorded.
+          // Already stopped.
         }
 
         testerRef.current = null;
@@ -372,27 +465,29 @@ export default function App() {
         finish(
           'warning',
           'Speed test timed out',
-          'The requested sample did not finish within 90 seconds.'
+          'The sample did not finish within 90 seconds.'
         );
       }, 90000);
 
       tester.play();
     } catch {
-      if (speedTimerRef.current) {
+      if (speedTimerRef.current !== null) {
         window.clearTimeout(speedTimerRef.current);
       }
 
       speedTimerRef.current = null;
+      testerRef.current = null;
+
       setSpeedState('incomplete');
-      setSpeedError('Speed test could not start. Try again.');
+      setSpeedError(
+        'Speed test could not start. Try again.'
+      );
 
       finish(
         'error',
         'Speed test could not start',
         'Check your connection and retry.'
       );
-
-      testerRef.current = null;
     }
   }
 
@@ -409,12 +504,14 @@ export default function App() {
         'Public lookup unavailable',
         'The desktop connection is not ready.'
       );
+
       return;
     }
 
     if (!window.confirm(
-      'NetDoctor will contact IP.SB once over HTTPS. The service sees your ' +
-      'exit IP and returns its operator. Your optional router WAN address stays local. Continue?'
+      'NetDoctor will contact IP.SB once over HTTPS. ' +
+      'The service sees your exit IP and returns its operator. ' +
+      'Your optional router WAN address stays local. Continue?'
     )) {
       notify(
         'info',
@@ -448,14 +545,16 @@ export default function App() {
           'Exit network and NAT clues are shown below.'
         );
       } else {
-        setPublicError(
-          response?.error || 'Public connection lookup failed.'
-        );
+        const message =
+          response?.error ||
+          'Public connection lookup failed.';
+
+        setPublicError(message);
 
         finish(
           'warning',
           'Public lookup did not complete',
-          response?.error || 'No usable result returned.'
+          message
         );
       }
     } catch {
@@ -492,57 +591,15 @@ export default function App() {
     ? Date.now() - new Date(speed.tested_at).getTime()
     : null;
 
-  const speedOld =
-    age != null &&
-    (
-      !Number.isFinite(age) ||
-      age > 2 * 3600000 ||
-      age < -300000
-    );
-
-  const navigation = [
-    ['dashboard', 'Overview', Gauge],
-    ['diagnosis', 'Diagnosis', Activity],
-    ['activities', 'Activities', Gamepad2],
-    ['stability', 'Stability', Signal],
-    ['cloud', 'Cloud regions', Cloud],
-    ['details', 'Network details', Laptop2],
-  ];
+  const speedOld = age != null && (
+    !Number.isFinite(age) ||
+    age > 7200000 ||
+    age < -300000
+  );
 
   return (
-    <div className="shell">
+    <div className="nd-tool-content">
       <FeedbackHub />
-
-      <aside className="sidebar">
-        <div className="brand">
-          <div className="brand-icon">
-            <Activity size={24} />
-          </div>
-
-          <span>
-            Net<span className="brand-accent">Doctor</span>
-          </span>
-        </div>
-
-        <div className="menu-label">
-          WORKSPACE
-        </div>
-
-        {navigation.map(([id, label, Icon]) => (
-          <button
-            key={id}
-            className={`nav ${tab === id ? 'selected' : ''}`}
-            onClick={() => openTab(id)}
-          >
-            <Icon size={19} /> {label}
-          </button>
-        ))}
-
-        <div className="sidebar-bottom">
-          <span className="side-dot" /> Local Windows app
-          <small>No account or subscription</small>
-        </div>
-      </aside>
 
       <main className="content">
         <header className="topbar">
@@ -551,20 +608,13 @@ export default function App() {
               NETWORK CONTROL CENTER
             </p>
 
-            <h1>
-              {({
-                dashboard: 'Your connection at a glance',
-                diagnosis: 'Network diagnosis',
-                activities: 'Activity insights',
-                stability: 'Stability & history',
-                cloud: 'Cloud region comparisons',
-                details: 'Connection details',
-              })[tab]}
-            </h1>
+            <h1>{TITLES[tab]}</h1>
           </div>
 
           <div
-            className={`connection-pill ${good ? 'online' : ''}`}
+            className={`connection-pill ${
+              good ? 'online' : ''
+            }`}
           >
             <span className="pulse" />
 
@@ -585,6 +635,7 @@ export default function App() {
                     <p className="eyebrow">
                       SPEED TEST ON DEMAND
                     </p>
+
                     <h2>Internet speed</h2>
                   </div>
 
@@ -635,7 +686,8 @@ export default function App() {
                   </span>
                 </div>
 
-                {(speedError || speedState === 'incomplete') && (
+                {(speedError ||
+                  speedState === 'incomplete') && (
                   <p className="inline-warning">
                     {speedError ||
                       'The test ended with incomplete measurements.'}
@@ -647,18 +699,25 @@ export default function App() {
                 <article className="mini-metric">
                   <Activity size={19} />
                   <span>LATENCY</span>
-                  <strong>{msText(speed?.latency_ms)}</strong>
+
+                  <strong>
+                    {msText(speed?.latency_ms)}
+                  </strong>
                 </article>
 
                 <article className="mini-metric">
                   <Signal size={19} />
                   <span>JITTER</span>
-                  <strong>{msText(speed?.jitter_ms)}</strong>
+
+                  <strong>
+                    {msText(speed?.jitter_ms)}
+                  </strong>
                 </article>
 
                 <article className="mini-metric">
                   <Wifi size={19} />
                   <span>WI-FI</span>
+
                   <strong>{wifiLabel}</strong>
                 </article>
               </section>
@@ -667,25 +726,33 @@ export default function App() {
                 <article className="panel diagnosis-panel">
                   <div className="panel-heading">
                     <h3>
-                      <Shield size={19} /> Connection health
+                      <Shield size={19} />
+                      Connection health
                     </h3>
 
                     <FeedbackButton
                       className="text-link"
-                      onClick={() => refreshOverview(false)}
+                      onClick={() =>
+                        refreshOverview(false)
+                      }
                       busy={checking}
                     >
-                      <RefreshCw size={15} /> Recheck
+                      <RefreshCw size={15} />
+                      Recheck
                     </FeedbackButton>
                   </div>
 
                   <div className="health-title">
                     <CheckCircle2
                       size={24}
-                      className={good ? 'good' : 'subtle'}
+                      className={
+                        good ? 'good' : 'subtle'
+                      }
                     />
 
-                    <strong>{overview.headline}</strong>
+                    <strong>
+                      {overview.headline}
+                    </strong>
                   </div>
 
                   <p>{overview.explanation}</p>
@@ -697,16 +764,22 @@ export default function App() {
                   )}
 
                   <button
+                    type="button"
                     className="detail-link"
-                    onClick={() => openTab('diagnosis')}
+                    onClick={() =>
+                      onNavigate('diagnosis')
+                    }
                   >
                     Investigate possible causes →
                   </button>
 
                   <div style={{ marginTop: 16 }}>
                     <button
+                      type="button"
                       className="detail-link"
-                      onClick={() => openTab('activities')}
+                      onClick={() =>
+                        onNavigate('activities')
+                      }
                     >
                       Gaming, streaming and video-call insights →
                     </button>
@@ -716,7 +789,8 @@ export default function App() {
                 <article className="panel">
                   <div className="panel-heading">
                     <h3>
-                      <Router size={19} /> Network snapshot
+                      <Router size={19} />
+                      Network snapshot
                     </h3>
                   </div>
 
@@ -732,14 +806,17 @@ export default function App() {
 
                   <DataLine
                     label="VPN route"
-                    value={vpn?.status ?? overview.vpn}
+                    value={
+                      vpn?.status ?? overview.vpn
+                    }
                     quiet
                   />
 
                   <DataLine
                     label="Exit IP network"
                     value={
-                      publicInfo?.exit_network ?? 'Not checked'
+                      publicInfo?.exit_network ??
+                      'Not checked'
                     }
                     quiet={!publicInfo}
                   />
@@ -747,7 +824,8 @@ export default function App() {
                   <DataLine
                     label="CGNAT"
                     value={
-                      publicInfo?.nat_status ?? 'Not checked'
+                      publicInfo?.nat_status ??
+                      'Not checked'
                     }
                     quiet
                   />
@@ -764,21 +842,24 @@ export default function App() {
                     </strong>
 
                     <p>
-                      Open your router settings and look for
-                      its WAN IPv4 address under Internet,
-                      WAN, or Status. Enter it in Network
-                      details so NetDoctor can compare it
-                      with your observed public IP.
+                      Open your router settings and
+                      find its WAN IPv4 address under
+                      Internet, WAN or Status.
+                      Enter it in Network details to
+                      compare with the observed public IP.
                     </p>
 
                     <p className="disclaimer">
-                      The comparison provides clues, not
-                      definitive proof of CGNAT.
+                      The comparison provides clues,
+                      not definitive proof of CGNAT.
                     </p>
 
                     <button
+                      type="button"
                       className="detail-link"
-                      onClick={() => openTab('details')}
+                      onClick={() =>
+                        onNavigate('details')
+                      }
                     >
                       Check for CGNAT →
                     </button>
@@ -791,25 +872,38 @@ export default function App() {
           {tab === 'diagnosis' && (
             <DiagnosisPanel
               overview={overview}
-              reading={speedState === 'running' ? null : speed}
-              onRecheck={() => refreshOverview(false)}
+              reading={
+                speedState === 'running'
+                  ? null
+                  : speed
+              }
+              onRecheck={() =>
+                refreshOverview(false)
+              }
               checking={checking}
             />
           )}
 
           {tab === 'activities' && (
             <ActivityPanel
-              reading={speedState === 'running' ? null : speed}
+              reading={
+                speedState === 'running'
+                  ? null
+                  : speed
+              }
             />
           )}
 
-          {tab === 'stability' && <StabilityPanel />}
+          {tab === 'stability' && (
+            <StabilityPanel />
+          )}
 
           {tab === 'details' && (
             <section className="panel details-panel">
               <p className="eyebrow">
                 ADVANCED INFORMATION
               </p>
+
               <h2>Your network</h2>
 
               <DataLine
@@ -834,7 +928,8 @@ export default function App() {
               <DataLine
                 label="Wi-Fi link speed"
                 value={
-                  wifi?.adapter_link_speed ?? 'Not available'
+                  wifi?.adapter_link_speed ??
+                  'Not available'
                 }
               />
 
@@ -849,7 +944,9 @@ export default function App() {
 
               <DataLine
                 label="Wi-Fi network"
-                value={wifi?.ssid ?? 'Unavailable'}
+                value={
+                  wifi?.ssid ?? 'Unavailable'
+                }
               />
 
               <p className="disclaimer">
@@ -859,7 +956,9 @@ export default function App() {
 
               <DataLine
                 label="VPN routing"
-                value={vpn?.status ?? overview.vpn}
+                value={
+                  vpn?.status ?? overview.vpn
+                }
               />
 
               <p className="disclaimer">
@@ -868,7 +967,9 @@ export default function App() {
 
               <DataLine
                 label="Proxy settings"
-                value={proxy?.status ?? overview.proxy}
+                value={
+                  proxy?.status ?? overview.proxy
+                }
               />
 
               <p className="disclaimer">
@@ -876,12 +977,14 @@ export default function App() {
               </p>
 
               <div className="diagnosis-block">
-                <strong>Public IP and provider</strong>
+                <strong>
+                  Public IP and provider
+                </strong>
 
                 <p>
-                  Optional: contact IP.SB to check the operator
-                  of your exit IP. VPNs and proxies may change
-                  this result.
+                  Optional: contact IP.SB to
+                  identify the operator of your exit IP.
+                  VPNs and proxies may change the result.
                 </p>
 
                 <label
@@ -892,7 +995,8 @@ export default function App() {
                     fontSize: 13,
                   }}
                 >
-                  Router WAN IPv4 (optional, from your router settings)
+                  Router WAN IPv4
+                  (optional, from router settings)
                 </label>
 
                 <input
@@ -900,7 +1004,9 @@ export default function App() {
                   type="text"
                   value={wanIp}
                   maxLength={45}
-                  onChange={event => setWanIp(event.target.value)}
+                  onChange={event =>
+                    setWanIp(event.target.value)
+                  }
                   placeholder="e.g. 100.64.12.34"
                   style={{
                     margin: '8px 0 12px',
@@ -921,6 +1027,7 @@ export default function App() {
                     busy={publicBusy}
                   >
                     <Globe2 size={17} />
+
                     {publicBusy
                       ? 'Checking…'
                       : 'Check public connection'}
@@ -940,18 +1047,23 @@ export default function App() {
                   <div style={{ marginTop: 13 }}>
                     <DataLine
                       label="Observed public IP"
-                      value={publicInfo.public_ip}
+                      value={
+                        publicInfo.public_ip
+                      }
                     />
 
                     <DataLine
                       label="IP version"
-                      value={publicInfo.ip_family}
+                      value={
+                        publicInfo.ip_family
+                      }
                     />
 
                     <DataLine
                       label="Exit IP network"
                       value={
-                        publicInfo.exit_network ?? 'Unknown'
+                        publicInfo.exit_network ??
+                        'Unknown'
                       }
                     />
 
@@ -967,16 +1079,21 @@ export default function App() {
                     <DataLine
                       label="Local IPv4"
                       value={
-                        publicInfo.local_ipv4 ?? 'Unknown'
+                        publicInfo.local_ipv4 ??
+                        'Unknown'
                       }
                     />
 
                     <DataLine
                       label="CGNAT / NAT clues"
-                      value={publicInfo.nat_status}
+                      value={
+                        publicInfo.nat_status
+                      }
                     />
 
-                    <p>{publicInfo.nat_explanation}</p>
+                    <p>
+                      {publicInfo.nat_explanation}
+                    </p>
 
                     <p className="disclaimer">
                       {publicInfo.provider_explanation}
@@ -992,19 +1109,16 @@ export default function App() {
               />
 
               <p className="disclaimer">
-                No hotspot identity is inferred from Wi-Fi alone.
-                No router login, port scan or Windows location
-                permission is required.
+                No hotspot identity is inferred from
+                Wi-Fi alone. No router login, port scan
+                or Windows location permission is required.
               </p>
             </section>
           )}
         </div>
 
-        <div
-          style={{
-            display: tab === 'cloud' ? 'block' : 'none',
-          }}
-        >
+        {/* Keep cloud probes mounted when switching tools. */}
+        <div hidden={tab !== 'cloud'}>
           <CloudRegionsPanel />
         </div>
 

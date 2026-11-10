@@ -1,3 +1,4 @@
+
 const mount = document.getElementById('root');
 
 function showStartupError(reason) {
@@ -81,6 +82,7 @@ if (!mount) {
     import('react'),
     import('react-dom/client'),
     import('./App.jsx'),
+    import('./GuidedHome.jsx'),
     import('./NetworkContextNotice.jsx'),
     import('./styles.css'),
   ])
@@ -88,16 +90,19 @@ if (!mount) {
       ReactModule,
       DOMModule,
       AppModule,
+      GuidedHomeModule,
       NoticeModule,
     ]) => {
       const React =
         ReactModule.default || ReactModule;
 
       const App = AppModule.default;
+      const GuidedHome = GuidedHomeModule.default;
       const Notice = NoticeModule.default;
 
       if (
         typeof App !== 'function' ||
+        typeof GuidedHome !== 'function' ||
         typeof Notice !== 'function'
       ) {
         throw new Error(
@@ -169,7 +174,7 @@ if (!mount) {
             React.createElement(
               React.Fragment,
               null,
-              React.createElement(App),
+              React.createElement(GuidedHome, { ToolsApp: App }),
               React.createElement(Notice)
             )
           )
