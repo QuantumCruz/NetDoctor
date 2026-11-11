@@ -1,3 +1,4 @@
+
 <div align="center">
 
 <img src="assets/netdoctor-icon.png" alt="NetDoctor icon" width="112">
@@ -8,7 +9,9 @@
 
 **Evidence-based network diagnostics for Windows.**
 
-[Download NetDoctor](https://github.com/QuantumCruz/NetDoctor/releases/latest) · [Report an Issue](https://github.com/QuantumCruz/NetDoctor/issues) · [Source Code](https://github.com/QuantumCruz/NetDoctor)
+**Latest stable release: v1.0.0 — November 11, 2026**
+
+[Download NetDoctor v1.0.0](https://github.com/QuantumCruz/NetDoctor/releases/tag/v1.0.0) · [Report an Issue](https://github.com/QuantumCruz/NetDoctor/issues) · [Source Code](https://github.com/QuantumCruz/NetDoctor)
 
 [![NetDoctor CI](https://github.com/QuantumCruz/NetDoctor/actions/workflows/tests.yml/badge.svg)](https://github.com/QuantumCruz/NetDoctor/actions/workflows/tests.yml)
 
@@ -225,6 +228,37 @@ Windows permissions and driver limitations may restrict some available measureme
 
 ---
 
+## Navigation and Test Behavior
+
+NetDoctor distinguishes between foreground diagnostics and operations that can continue while users navigate.
+
+### Foreground Diagnostics
+
+Some tests must remain on their current screen until completion.
+
+During these operations:
+
+- Navigation is temporarily disabled.
+- The interface explains that a network check is in progress.
+- Users remain on the active diagnostic page.
+- Navigation becomes available when the operation finishes.
+
+This prevents accidental navigation from interrupting a foreground test or losing its results.
+
+### Background-Capable Operations
+
+Supported background-capable operations retain their intended behavior, including:
+
+- Overview speed testing
+- Connection stability monitoring
+- Cloud-region comparisons in Explore Tools
+
+These operations can continue while users navigate between supported application pages.
+
+Closing the application is different from switching pages: operations are not guaranteed to continue after NetDoctor exits.
+
+---
+
 ## Privacy and Network Usage
 
 NetDoctor is designed as a **local-first application**.
@@ -252,17 +286,37 @@ Uninstalling NetDoctor does not necessarily remove all saved diagnostic history.
 
 ## Download and Installation
 
-Download the latest published Windows release:
+### Latest Stable Release
 
-https://github.com/QuantumCruz/NetDoctor/releases/latest
+**NetDoctor v1.0.0 — Released November 11, 2026**
 
-### v1.0.0 Release Candidate
+Download the official Windows installer:
 
-The planned installer filename is:
+https://github.com/QuantumCruz/NetDoctor/releases/tag/v1.0.0
+
+**Installer:**
 
 `NetDoctor-Setup-v1.0.0-x64.exe`
 
-This release remains subject to packaged application testing and publication.
+**SHA-256 checksum file:**
+
+`NetDoctor-Setup-v1.0.0-x64.exe.sha256`
+
+**Verified installer SHA-256:**
+
+```text
+526fc76c14c8de1cddcff5f066402f9cc07e385136bc68cbe194c33d2f221857
+```
+
+To verify the downloaded installer in PowerShell:
+
+```powershell
+Get-FileHash -LiteralPath ".\NetDoctor-Setup-v1.0.0-x64.exe" -Algorithm SHA256
+```
+
+Compare the resulting hash with the verified value above.
+
+Do not run the installer if the hashes differ.
 
 ### System Requirements
 
@@ -426,7 +480,7 @@ Install Inno Setup 6:
 
 https://jrsoftware.org/isdl.php
 
-Build the release candidate:
+Build the Windows installer:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\build_installer.ps1"
@@ -437,7 +491,9 @@ Expected output:
 - `release\NetDoctor-Setup-v1.0.0-x64.exe`
 - `release\NetDoctor-Setup-v1.0.0-x64.exe.sha256`
 
-The installer must pass installation, startup, diagnostic, restart and uninstall testing before publication.
+Locally rebuilt installers are not guaranteed to have the same checksum as the official published installer.
+
+The official v1.0.0 release was validated through automated testing, packaged application checks and Windows installation acceptance testing.
 
 ---
 
@@ -462,13 +518,27 @@ Avoid publishing passwords, router credentials, tokens or unredacted diagnostic 
 
 ## Release Status
 
-**Development target: NetDoctor v1.0.0**
+**Latest stable version: NetDoctor v1.0.0**
 
-The release candidate is being prepared for final Windows installation and acceptance testing.
+**Released: November 11, 2026**
 
-Release notes are maintained in `docs/releases/v1.0.0.md`.
+Official release:
 
-The latest publicly available release can be found on GitHub Releases.
+https://github.com/QuantumCruz/NetDoctor/releases/tag/v1.0.0
+
+Release notes:
+
+[NetDoctor v1.0.0 Release Notes](docs/releases/v1.0.0.md)
+
+### Verified Release Commit
+
+```text
+b10ac9de138a22af05e166fb6bbc2a7c2b16f242
+```
+
+The `v1.0.0` Git tag identifies the tested application release.
+
+Subsequent documentation changes do not alter the released installer.
 
 ---
 
