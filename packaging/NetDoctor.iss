@@ -1,9 +1,9 @@
 
-; NetDoctor v0.3.0 Windows installer
+; NetDoctor v1.0.0 Windows installer
 ; Compile with Inno Setup 6.
 
 #define AppName "NetDoctor"
-#define AppVersion "0.3.0"
+#define AppVersion "1.0.0"
 #define AppPublisher "QuantumCruz"
 #define AppExeName "NetDoctor.exe"
 
@@ -26,7 +26,7 @@ ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0
 
 OutputDir=..\release
-OutputBaseFilename=NetDoctor-Setup-v0.3.0-x64
+OutputBaseFilename=NetDoctor-Setup-v1.0.0-x64
 SetupIconFile=..\assets\netdoctor.ico
 UninstallDisplayIcon={app}\NetDoctor.exe
 
@@ -39,7 +39,7 @@ RestartApplications=no
 UsePreviousAppDir=yes
 DisableProgramGroupPage=yes
 
-VersionInfoVersion=0.3.0.0
+VersionInfoVersion=1.0.0.0
 VersionInfoDescription=NetDoctor Windows Installer
 VersionInfoProductName=NetDoctor
 
@@ -51,6 +51,7 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 
 [Files]
 Source: "..\dist\NetDoctor\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\NetDoctor"; Filename: "{app}\NetDoctor.exe"; WorkingDir: "{app}"
