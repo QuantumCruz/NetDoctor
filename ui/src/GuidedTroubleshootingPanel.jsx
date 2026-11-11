@@ -1,3 +1,4 @@
+import { confirmInPage } from './confirmInPage.mjs';
 
 import { useRef, useState } from 'react';
 import {
@@ -200,7 +201,7 @@ export default function GuidedTroubleshootingPanel() {
           'will be changed. Continue?'
         );
 
-    if (!window.confirm(explanation)) return;
+    if (!(await confirmInPage({ title: 'Run network diagnosis?', message: (explanation).replace(/\s+(?:Continue\?|Start monitoring\?)$/, ''), confirmLabel: 'Run diagnosis' }))) return;
 
     running.current = true;
     setBusy(true);

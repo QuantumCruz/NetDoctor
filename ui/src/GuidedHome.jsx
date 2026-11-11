@@ -6,16 +6,19 @@ import {
   Signal, Stethoscope, Wrench,
 } from 'lucide-react';
 
+import InternetFaultFlow from './features/internet-fault/InternetFaultFlow.jsx';
 import PortForwardingFlow from './features/port-forwarding/PortForwardingFlow.jsx';
 import SlowInternetFlow from './features/slow-internet/SlowInternetFlow.jsx';
 import DisconnectFlow from './features/disconnections/DisconnectFlow.jsx';
 import WebsiteFlow from './features/website/WebsiteFlow.jsx';
 import VpsFinderFlow from './features/vps-finder/VpsFinderFlow.jsx';
 import VpnCheckFlow from './features/vpn-check/VpnCheckFlow.jsx';
+
 import './guided-home.css';
 import './unified-navigation.css';
 
 const QUESTIONS = [
+  ['internet', "What's wrong with my internet?"],
   ['port', 'Why is my port forwarding not working?'],
   ['slow', 'Why is my internet slow?'],
   ['disconnect', 'Why does my internet keep disconnecting?'],
@@ -205,6 +208,10 @@ export default function GuidedHome({ ToolsApp }) {
       >
         {page === 'questions' && (
           <Questions onChoose={openQuestion} />
+        )}
+
+        {page === 'internet' && (
+          <InternetFaultFlow onBack={back} />
         )}
 
         {page === 'port' && (

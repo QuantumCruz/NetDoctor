@@ -16,6 +16,10 @@ ui/dist/
 ui/.vite/
 *.tsbuildinfo
 
+# Generated installers and release archives
+release/
+NetDoctor-Windows-*.zip
+
 # Local editor and environment files
 .env
 .env.*

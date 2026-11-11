@@ -1,3 +1,4 @@
+import { confirmInPage } from './confirmInPage.mjs';
 
 import { useRef, useState } from 'react';
 import {
@@ -61,13 +62,11 @@ export default function CloudRegionsPanel() {
     const selected = PROVIDERS.find(item => item.value === provider);
     const count = selected?.count ?? 10;
 
-    if (!window.confirm(
-      `NetDoctor will contact ${count} public cloud API endpoints ` +
+    if (!(await confirmInPage({ title: 'Compare cloud regions?', message: (`NetDoctor will contact ${count} public cloud API endpoints ` +
       `over TCP port 443, with three connection attempts per endpoint. ` +
       `The endpoints may observe your public exit IP address. ` +
       `No large files are downloaded, no cloud accounts are required, ` +
-      `and no network settings are changed. Continue?`
-    )) {
+      `and no network settings are changed. Continue?`).replace(/\s+(?:Continue\?|Start monitoring\?)$/, ''), confirmLabel: 'Measure regions' }))) {
       return;
     }
 

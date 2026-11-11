@@ -2,7 +2,7 @@
 import { ArrowRight, RotateCcw } from 'lucide-react';
 import { getPortForwardingAnswer } from './portForwarding.mjs';
 
-/** The diagnosis, evidence, and next action. No network calls or state ownership. */
+/** Present existing port-forwarding evidence and relevant next steps. */
 export default function PortForwardingResult({
   wan, wanInfo, connection, setConnection, report,
   busy, error, onCompare, onRestart, onExploreTools,
@@ -49,11 +49,48 @@ export default function PortForwardingResult({
         <p>{answer.action}</p>
       </div>
 
+      {answer.alternatives?.length > 0 && (
+        <div style={{ marginTop: 20 }}>
+          <strong>Ways to connect despite upstream NAT</strong>
+          <p>
+            Choose an option based on whether access is private
+            (friends or your own devices) or public (anyone on the internet).
+          </p>
+
+          {answer.alternatives.map(option => (
+            <div className="guided-details" key={option.key}>
+              <strong>{option.title}</strong>
+              <p>{option.detail}</p>
+
+              {option.links?.map(link => (
+                <p key={link.url}>
+                  <a
+                    href={link.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {link.label}
+                  </a>
+                </p>
+              ))}
+            </div>
+          ))}
+
+          <p className="guided-caution">
+            Tailscale and ZeroTier require compatible devices and application
+            support. NAT restrictions can also force relayed connections,
+            which may add latency. NetDoctor has not tested these services
+            on your network.
+          </p>
+        </div>
+      )}
+
       <div style={{ marginTop: 17 }}>
         <strong>Evidence</strong>
         <p><strong>Router WAN:</strong> {wan.trim()}</p>
         <p><strong>Address range:</strong> {wanInfo.range}</p>
         <p><strong>Externally observed IP:</strong> {report?.public_ip || 'Not checked'}</p>
+
         {report && (
           <>
             <p><strong>IP version:</strong> {report.ip_family || 'Unknown'}</p>
@@ -70,6 +107,7 @@ export default function PortForwardingResult({
             The service will see your public IP; your entered router WAN
             address stays on this computer. No settings are changed.
           </p>
+
           <div className="guided-buttons">
             <button
               type="button"
@@ -84,23 +122,46 @@ export default function PortForwardingResult({
         </>
       )}
 
-      {error && <p className="guided-error" role="alert">{error}</p>}
+      {error && (
+        <p className="guided-error" role="alert">
+          {error}
+        </p>
+      )}
 
       <p className="guided-caution">
         This does not test whether an inbound port is open.
         VPNs and proxies can change the external address observed by the lookup.
       </p>
+
       <details className="guided-details">
         <summary>Technical explanation</summary>
-        <p>RFC 1918 defines private IPv4 ranges. RFC 6598 defines carrier-shared IPv4 space. These addresses cannot be reached directly from the public IPv4 internet.</p>
-        <p>An actual port test needs a listening application and an incoming attempt from a separate network.</p>
+        <p>
+          RFC 1918 defines private IPv4 ranges. RFC 6598 defines
+          carrier-shared IPv4 space. These addresses cannot be
+          reached directly from the public IPv4 internet.
+        </p>
+        <p>
+          An actual port test needs a listening application and
+          an incoming attempt from a separate network.
+        </p>
       </details>
 
       <div className="guided-buttons">
-        <button type="button" className="guided-primary" onClick={onRestart} disabled={busy}>
+        <button
+          type="button"
+          className="guided-primary"
+          onClick={onRestart}
+          disabled={busy}
+        >
           Start again <RotateCcw size={16} />
         </button>
-        <button type="button" className="guided-secondary" onClick={onExploreTools} disabled={busy}>
+
+        <button
+          type="button"
+          className="guided-secondary"
+          onClick={onExploreTools}
+          disabled={busy}
+        >
           Explore tools
         </button>
       </div>

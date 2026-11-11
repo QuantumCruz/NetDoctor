@@ -1,6 +1,14 @@
 
 import { useRef, useState } from 'react';
-import { Activity, ArrowRight, CircleHelp, RotateCcw, ShieldCheck } from 'lucide-react';
+import {
+  Activity,
+  ArrowLeft,
+  ArrowRight,
+  CircleHelp,
+  RotateCcw,
+  ShieldCheck,
+} from 'lucide-react';
+
 import { classifyWan } from './portForwarding.mjs';
 import PortForwardingResult from './PortForwardingResult.jsx';
 
@@ -9,28 +17,38 @@ const QUESTION = 'Why is my port forwarding not working?';
 function Bubble({ mine = false, children }) {
   return (
     <div className={`guided-message ${mine ? 'guided-mine' : ''}`}>
-      {!mine && <span className="guided-avatar"><Activity size={18} /></span>}
+      {!mine && (
+        <span className="guided-avatar">
+          <Activity size={18} />
+        </span>
+      )}
       <div className="guided-bubble">{children}</div>
     </div>
   );
 }
 
-/** One guided question. New questions should be added only after this works. */
-export default function PortForwardingFlow({ onExploreTools }) {
-  const [step, setStep] = useState('start');
+export default function PortForwardingFlow({
+  onBack,
+  onExploreTools,
+  autoStart = false,
+}) {
+  const initialStep = autoStart ? 'input' : 'start';
+
+  const [step, setStep] = useState(initialStep);
   const [wan, setWan] = useState('');
   const [help, setHelp] = useState(false);
   const [connection, setConnection] = useState('unknown');
   const [report, setReport] = useState(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const running = useRef(false);
 
+  const running = useRef(false);
   const wanInfo = classifyWan(wan);
 
   function restart() {
     if (running.current) return;
-    setStep('start');
+
+    setStep(initialStep);
     setWan('');
     setHelp(false);
     setConnection('unknown');
@@ -40,9 +58,14 @@ export default function PortForwardingFlow({ onExploreTools }) {
 
   async function compare() {
     if (running.current || !wanInfo) return;
+
     const api = window.pywebview?.api;
+
     if (!api?.check_public_connection) {
-      setError('Public IP lookup requires the NetDoctor Windows app. The WAN address classification remains valid.');
+      setError(
+        'Public IP lookup requires the NetDoctor Windows app. ' +
+        'The WAN address classification remains valid.'
+      );
       return;
     }
 
@@ -51,14 +74,22 @@ export default function PortForwardingFlow({ onExploreTools }) {
     setError('');
 
     try {
-      const response = await api.check_public_connection(wan.trim());
+      const response = await api.check_public_connection(
+        wan.trim()
+      );
+
       if (!response?.ok || !response.report) {
-        setError(response?.error || 'The public IP lookup could not finish.');
+        setError(
+          response?.error ||
+          'The public IP lookup could not finish.'
+        );
       } else {
         setReport(response.report);
       }
     } catch {
-      setError('The public IP lookup could not finish. Try again.');
+      setError(
+        'The public IP lookup could not finish. Try again.'
+      );
     } finally {
       running.current = false;
       setBusy(false);
@@ -69,62 +100,141 @@ export default function PortForwardingFlow({ onExploreTools }) {
     <main className="guided-main">
       <header className="guided-header">
         <div>
-          <p className="guided-eyebrow">NETWORK HELP, MADE SIMPLE</p>
+          <p className="guided-eyebrow">
+            NETWORK HELP, MADE SIMPLE
+          </p>
           <h1>Ask NetDoctor</h1>
-          <p>Choose a question and get a straightforward explanation.</p>
+          <p>
+            Choose a question and get a
+            straightforward explanation.
+          </p>
         </div>
-        {step !== 'start' && (
-          <button type="button" className="guided-restart" disabled={busy} onClick={restart}>
-            <RotateCcw size={16} /> Start over
+
+        <div
+          className="guided-buttons"
+          style={{ marginTop: 0 }}
+        >
+          <button
+            type="button"
+            className="guided-restart"
+            disabled={busy}
+            onClick={onBack}
+          >
+            <ArrowLeft size={16} />
+            All questions
           </button>
-        )}
+
+          {step !== 'start' && (
+            <button
+              type="button"
+              className="guided-restart"
+              disabled={busy}
+              onClick={restart}
+            >
+              <RotateCcw size={16} />
+              Start over
+            </button>
+          )}
+        </div>
       </header>
 
-      <section className="guided-chat" aria-label="Troubleshooting conversation" aria-busy={busy}>
+      <section
+        className="guided-chat"
+        aria-label="Troubleshooting conversation"
+        aria-busy={busy}
+      >
         <Bubble>
           <strong>Hello! I'm NetDoctor.</strong>
-          <p>What can I help you understand about your network?</p>
+          <p>
+            What can I help you understand about your network?
+          </p>
         </Bubble>
 
         {step === 'start' && (
-          <button type="button" className="guided-question" onClick={() => setStep('input')}>
-            <CircleHelp size={19} /> <span>{QUESTION}</span> <ArrowRight size={18} />
+          <button
+            type="button"
+            className="guided-question"
+            onClick={() => setStep('input')}
+          >
+            <CircleHelp size={19} />
+            <span>{QUESTION}</span>
+            <ArrowRight size={18} />
           </button>
         )}
-        {step !== 'start' && <Bubble mine>{QUESTION}</Bubble>}
+
+        {step !== 'start' && (
+          <Bubble mine>{QUESTION}</Bubble>
+        )}
 
         {step === 'input' && (
           <Bubble>
-            <strong>What is your router's WAN IPv4 address?</strong>
-            <p>Find this in your router settings. It is different from your computer's local address.</p>
+            <strong>
+              What is your router's WAN IPv4 address?
+            </strong>
+
+            <p>
+              Find this in your router settings.
+              It is different from your computer's local address.
+            </p>
+
             <form
               className="guided-wan-form"
-              onSubmit={event => { event.preventDefault(); if (wanInfo) setStep('result'); }}
+              onSubmit={event => {
+                event.preventDefault();
+                if (wanInfo) setStep('result');
+              }}
             >
-              <label htmlFor="guided-wan">Router WAN IPv4</label>
+              <label htmlFor="guided-wan">
+                Router WAN IPv4
+              </label>
+
               <input
                 id="guided-wan"
                 autoComplete="off"
                 spellCheck={false}
                 maxLength={45}
                 value={wan}
-                onChange={event => { setWan(event.target.value); setReport(null); }}
+                onChange={event => {
+                  setWan(event.target.value);
+                  setReport(null);
+                }}
                 placeholder="Enter the address from your router"
               />
-              {wan.trim() && !wanInfo && <small className="guided-error">Enter a valid IPv4 address.</small>}
+
+              {wan.trim() && !wanInfo && (
+                <small className="guided-error">
+                  Enter a valid IPv4 address.
+                </small>
+              )}
+
               <div className="guided-buttons">
-                <button type="submit" className="guided-primary" disabled={!wanInfo}>
-                  Check address <ArrowRight size={16} />
+                <button
+                  type="submit"
+                  className="guided-primary"
+                  disabled={!wanInfo}
+                >
+                  Check address
+                  <ArrowRight size={16} />
                 </button>
-                <button type="button" className="guided-secondary" onClick={() => setHelp(!help)}>
-                  {help ? 'Hide instructions' : 'Where do I find it?'}
+
+                <button
+                  type="button"
+                  className="guided-secondary"
+                  onClick={() => setHelp(!help)}
+                >
+                  {help
+                    ? 'Hide instructions'
+                    : 'Where do I find it?'}
                 </button>
               </div>
             </form>
+
             {help && (
               <p className="guided-help">
-                Open your router settings and look for <strong>Internet</strong>,
-                <strong> WAN</strong>, or <strong>Connection Status</strong>.
+                Open your router settings and look for
+                <strong> Internet</strong>,
+                <strong> WAN</strong>, or
+                <strong> Connection Status</strong>.
                 Copy the WAN IPv4 shown there.
               </p>
             )}
@@ -133,7 +243,10 @@ export default function PortForwardingFlow({ onExploreTools }) {
 
         {step === 'result' && wanInfo && (
           <>
-            <Bubble mine>My router WAN IPv4 is {wan.trim()}.</Bubble>
+            <Bubble mine>
+              My router WAN IPv4 is {wan.trim()}.
+            </Bubble>
+
             <Bubble>
               <PortForwardingResult
                 wan={wan}
@@ -153,7 +266,9 @@ export default function PortForwardingFlow({ onExploreTools }) {
       </section>
 
       <footer className="guided-footer">
-        <ShieldCheck size={16} /> Confirmed findings are separated from checks not yet run.
+        <ShieldCheck size={16} />
+        Confirmed findings are separated
+        from checks not yet run.
       </footer>
     </main>
   );

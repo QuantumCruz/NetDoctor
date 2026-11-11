@@ -1,3 +1,4 @@
+import { confirmInPage } from './confirmInPage.mjs';
 
 import { useEffect, useState } from 'react';
 import {
@@ -132,12 +133,10 @@ export default function ActivityPanel({ reading }) {
       return;
     }
 
-    if (!window.confirm(
-      'NetDoctor will download up to 4 MiB (about 4.2 MB) from a test ' +
+    if (!(await confirmInPage({ title: 'Check responsiveness under load?', message: ('NetDoctor will download up to 4 MiB (about 4.2 MB) from a test ' +
       'provider and send small ping requests to compare response times ' +
       'before and during the download. This may use metered mobile data. ' +
-      'No settings will be changed. Continue?'
-    )) {
+      'No settings will be changed. Continue?').replace(/\s+(?:Continue\?|Start monitoring\?)$/, ''), confirmLabel: 'Run test' }))) {
       notify(
         'info',
         'Response check cancelled',

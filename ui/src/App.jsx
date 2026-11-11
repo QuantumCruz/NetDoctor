@@ -1,3 +1,4 @@
+import { confirmInPage } from './confirmInPage.mjs';
 
 import { useEffect, useRef, useState } from 'react';
 import SpeedTest from '@cloudflare/speedtest';
@@ -343,7 +344,7 @@ export default function App({
     };
   }, []);
 
-  function startSpeedTest() {
+  async function startSpeedTest() {
     if (
       testerRef.current ||
       speedState === 'running'
@@ -351,12 +352,10 @@ export default function App({
       return;
     }
 
-    if (!window.confirm(
-      'This test transfers up to about 22.4 MB plus overhead ' +
+    if (!(await confirmInPage({ title: 'Run internet speed test?', message: ('This test transfers up to about 22.4 MB plus overhead ' +
       '(11.2 MB download and 11.2 MB upload). ' +
       'Mobile data may be charged. Traffic goes to an ' +
-      'external speed-test provider. Continue?'
-    )) {
+      'external speed-test provider. Continue?').replace(/\s+(?:Continue\?|Start monitoring\?)$/, ''), confirmLabel: 'Run speed test' }))) {
       notify(
         'info',
         'Speed test cancelled',
@@ -508,11 +507,9 @@ export default function App({
       return;
     }
 
-    if (!window.confirm(
-      'NetDoctor will contact IP.SB once over HTTPS. ' +
+    if (!(await confirmInPage({ title: 'Check public IP and network?', message: ('NetDoctor will contact IP.SB once over HTTPS. ' +
       'The service sees your exit IP and returns its operator. ' +
-      'Your optional router WAN address stays local. Continue?'
-    )) {
+      'Your optional router WAN address stays local. Continue?').replace(/\s+(?:Continue\?|Start monitoring\?)$/, ''), confirmLabel: 'Check public IP' }))) {
       notify(
         'info',
         'Public lookup cancelled',
