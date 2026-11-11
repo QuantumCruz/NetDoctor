@@ -1,4 +1,3 @@
-
 import { useEffect, useRef, useState } from 'react';
 import {
   Activity, ChevronDown, CircleHelp, Cloud, Gauge,
@@ -35,6 +34,54 @@ const TOOLS = [
   ['cloud', 'Cloud regions', Cloud],
   ['details', 'Network details', Laptop2],
 ];
+
+/**
+ * Determine whether navigating away would interrupt a foreground check.
+ *
+ * Guided flows already expose their busy state using aria-busy.
+ * The Diagnosis tool uses the same attribute.
+ *
+ * Activities exposes temporary status messages while its refresh
+ * or loaded-latency request is running.
+ *
+ * Other tools retain their operations independently, so they are
+ * deliberately excluded from the navigation lock.
+ */
+function hasForegroundOperation(root, page, toolTab) {
+  if (!root || page === 'questions') {
+    return false;
+  }
+
+  if (page === 'tool') {
+    const activeTool = root.querySelector(
+      '.nd-page-enter'
+    );
+
+    if (!activeTool) {
+      return false;
+    }
+
+    if (toolTab === 'diagnosis') {
+      return Boolean(
+        activeTool.querySelector('[aria-busy="true"]')
+      );
+    }
+
+    if (toolTab === 'activities') {
+      return Boolean(
+        activeTool.querySelector('[role="status"]')
+      );
+    }
+
+    return false;
+  }
+
+  return Boolean(
+    root.querySelector(
+      '.guided-main [aria-busy="true"]'
+    )
+  );
+}
 
 function Questions({ onChoose }) {
   return (
@@ -93,11 +140,29 @@ export default function GuidedHome({ ToolsApp }) {
   const [toolsOpen, setToolsOpen] = useState(false);
   const [toolTab, setToolTab] = useState('dashboard');
   const [toolsMounted, setToolsMounted] = useState(false);
+  const [navigationLocked, setNavigationLocked] = useState(false);
 
   const viewport = useRef(null);
   const isTool = page === 'tool';
 
+  /*
+   * Recheck the actual foreground operation before navigation.
+   * This protects navigation even before the observer has updated
+   * the visible disabled state.
+   */
+  function isNavigationBlocked() {
+    return hasForegroundOperation(
+      viewport.current,
+      page,
+      toolTab
+    );
+  }
+
   function openTool(tab) {
+    if (isNavigationBlocked()) {
+      return;
+    }
+
     setToolTab(tab);
     setToolsMounted(true);
     setToolsOpen(true);
@@ -105,8 +170,73 @@ export default function GuidedHome({ ToolsApp }) {
   }
 
   function openQuestion(id) {
+    if (isNavigationBlocked()) {
+      return;
+    }
+
     setPage(id);
   }
+
+  function back() {
+    if (isNavigationBlocked()) {
+      return;
+    }
+
+    setPage('questions');
+  }
+
+  function toggleTools() {
+    if (isNavigationBlocked()) {
+      return;
+    }
+
+    setToolsOpen(value => !value);
+  }
+
+  /*
+   * Observe existing accessibility states instead of changing the
+   * network engines or requiring every guided flow to implement
+   * a separate navigation callback.
+   *
+   * Both state updates and added/removed status elements are
+   * detected, so navigation unlocks when a check finishes.
+   */
+  useEffect(() => {
+    const root = viewport.current;
+
+    if (!root) {
+      return undefined;
+    }
+
+    function refreshNavigationLock() {
+      const locked = hasForegroundOperation(
+        root,
+        page,
+        toolTab
+      );
+
+      setNavigationLocked(previous =>
+        previous === locked ? previous : locked
+      );
+    }
+
+    refreshNavigationLock();
+
+    const observer = new MutationObserver(
+      refreshNavigationLock
+    );
+
+    observer.observe(root, {
+      attributes: true,
+      attributeFilter: ['aria-busy'],
+      childList: true,
+      subtree: true,
+    });
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [page, toolTab]);
 
   useEffect(() => {
     if (viewport.current) {
@@ -114,7 +244,9 @@ export default function GuidedHome({ ToolsApp }) {
     }
   }, [page, toolTab]);
 
-  const back = () => setPage('questions');
+  const navigationMessage = navigationLocked
+    ? 'A network check is in progress. Navigation will be available when it finishes.'
+    : undefined;
 
   return (
     <div className="guided-shell">
@@ -142,7 +274,13 @@ export default function GuidedHome({ ToolsApp }) {
             !isTool ? 'guided-nav-active' : ''
           }`}
           aria-current={!isTool ? 'page' : undefined}
+          disabled={navigationLocked}
+          title={navigationMessage}
           onClick={back}
+          style={{
+            opacity: navigationLocked ? 0.5 : undefined,
+            cursor: navigationLocked ? 'not-allowed' : undefined,
+          }}
         >
           <MessageCircle size={19} />
           <span>Ask NetDoctor</span>
@@ -155,7 +293,13 @@ export default function GuidedHome({ ToolsApp }) {
           }`}
           aria-expanded={toolsOpen}
           aria-controls="guided-tools-list"
-          onClick={() => setToolsOpen(value => !value)}
+          disabled={navigationLocked}
+          title={navigationMessage}
+          onClick={toggleTools}
+          style={{
+            opacity: navigationLocked ? 0.5 : undefined,
+            cursor: navigationLocked ? 'not-allowed' : undefined,
+          }}
         >
           <Wrench size={19} />
           <span>Explore tools</span>
@@ -188,13 +332,49 @@ export default function GuidedHome({ ToolsApp }) {
                     ? 'page'
                     : undefined
                 }
+                disabled={navigationLocked}
+                title={navigationMessage}
                 onClick={() => openTool(id)}
+                style={{
+                  opacity: navigationLocked ? 0.5 : undefined,
+                  cursor: navigationLocked ? 'not-allowed' : undefined,
+                }}
               >
                 <Icon size={17} />
                 <span>{label}</span>
               </button>
             ))}
           </nav>
+        )}
+
+        {navigationLocked && (
+          <div
+            role="status"
+            aria-live="polite"
+            style={{
+              marginTop: 18,
+              padding: '12px 13px',
+              borderRadius: 10,
+              border: '1px solid #37506e',
+              background: '#12223a',
+              color: '#d4e5f4',
+              fontSize: 12,
+              lineHeight: 1.6,
+            }}
+          >
+            <strong
+              style={{
+                display: 'block',
+                color: '#63e8cb',
+                marginBottom: 4,
+              }}
+            >
+              Network check in progress
+            </strong>
+
+            Please stay on this page until the check finishes.
+            Navigation will unlock automatically.
+          </div>
         )}
 
         <p className="guided-sidebar-footer">

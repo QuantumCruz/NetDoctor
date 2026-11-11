@@ -54,39 +54,12 @@ if (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
     throw "Project Python environment not found."
 }
 
-$versionCheck = @'
-import json
-import sys
-import tomllib
-from pathlib import Path
+Write-Host "`n=== VALIDATING VERSIONS ===" -ForegroundColor Cyan
 
-root = Path(sys.argv[1])
-expected = sys.argv[2]
+# Use one line for Python -c.
+# Windows PowerShell 5.1 can corrupt multiline native arguments.
 
-with (root / "pyproject.toml").open("rb") as file:
-    project = tomllib.load(file)
-
-with (root / "ui" / "package.json").open("r", encoding="utf-8") as file:
-    manifest = json.load(file)
-
-with (root / "ui" / "package-lock.json").open("r", encoding="utf-8") as file:
-    lock = json.load(file)
-
-versions = {
-    "Python package": project["project"]["version"],
-    "React package": manifest["version"],
-    "npm lockfile": lock["version"],
-    "npm lockfile root": lock["packages"][""]["version"],
-}
-
-for component, version in versions.items():
-    if version != expected:
-        raise SystemExit(
-            f"{component} version is {version}, expected {expected}"
-        )
-
-print(f"PASS: All package versions match {expected}")
-'@
+$versionCheck = "import json,sys,tomllib,pathlib; r=pathlib.Path(sys.argv[1]); e=sys.argv[2]; p=tomllib.loads((r/'pyproject.toml').read_text(encoding='utf-8')); m=json.loads((r/'ui/package.json').read_text(encoding='utf-8')); l=json.loads((r/'ui/package-lock.json').read_text(encoding='utf-8')); v=(p['project']['version'],m['version'],l['version'],l['packages']['']['version']); assert v==(e,)*4, 'Release versions inconsistent: '+repr(v); print('PASS: All package versions match '+e)"
 
 & $python -c $versionCheck $root $releaseVersion
 
@@ -101,7 +74,7 @@ if (
     $innoConfig -notmatch '(?m)^OutputBaseFilename=NetDoctor-Setup-v1\.0\.0-x64\s*$' -or
     $innoConfig -notmatch '(?m)^VersionInfoVersion=1\.0\.0\.0\s*$'
 ) {
-    throw "Inno Setup version metadata does not match v1.0.0."
+    throw "Inno Setup metadata does not match v1.0.0."
 }
 
 Write-Host "Source and version validation passed." -ForegroundColor Green
